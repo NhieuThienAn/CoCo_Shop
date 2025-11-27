@@ -1,0 +1,87 @@
+.admin-orders-page {
+  padding: 24px;
+
+  .ant-typography.ant-typography-h2 {
+    margin-bottom: 0;
+  }
+
+  .order-card {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+    transition: all 0.3s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    &:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .order-card-content {
+      padding: 0;
+
+      .order-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+
+        h4 {
+          flex: 1;
+          margin-right: 8px;
+
+          a {
+            color: #1890ff;
+            &:hover {
+              text-decoration: underline;
+            }
+          }
+        }
+      }
+
+      .ant-space {
+        .ant-typography {
+          font-size: 13px;
+          color: rgba(0, 0, 0, 0.65);
+          display: block;
+          margin-bottom: 4px;
+
+          strong {
+            color: rgba(0, 0, 0, 0.85);
+            margin-right: 4px;
+          }
+        }
+      }
+    }
+
+    .ant-card-actions {
+      border-top: 1px solid #f0f0f0;
+      background: #f9f9f9;
+      padding: 8px 0;
+      display: flex;
+      justify-content: space-around;
+
+      li {
+        margin: 0 !important;
+        padding: 0 4px;
+        &:not(:last-child) {
+          border-right: 1px solid #f0f0f0;
+        }
+        .ant-btn {
+          padding: 0 8px;
+          height: auto;
+          line-height: 1.5715;
+        }
+      }
+    }
+  }
+
+  // Responsive adjustments
+  @media (max-width: 576px) {
+    .ant-col {
+      margin-bottom: 16px;
+    }
+  }
+}

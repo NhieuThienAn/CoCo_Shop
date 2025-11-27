@@ -1,0 +1,39 @@
+const express = require('express');
+const router = express.Router();
+const { ProductController } = require('../Controllers');
+const { authenticate, authorize, optionalAuthenticate } = require('../Middlewares');
+
+/**
+ * Product Routes
+ */
+
+// Public routes - No authentication required
+router.get('/', optionalAuthenticate, ProductController.getAll);
+router.get('/:id', optionalAuthenticate, ProductController.getById);
+router.get('/slug/:slug', optionalAuthenticate, ProductController.getBySlug);
+router.get('/sku/:sku', optionalAuthenticate, ProductController.getBySku);
+router.get('/category/:categoryId', optionalAuthenticate, ProductController.getByCategory);
+router.get('/active/list', optionalAuthenticate, ProductController.getActive);
+router.get('/search/query', optionalAuthenticate, ProductController.search);
+router.get('/:id/images/primary', ProductController.getPrimaryImage);
+
+/**
+ * Product CRUD Routes - Admin only
+ */
+router.post('/', authenticate, authorize(1), ProductController.create);
+router.put('/:id', authenticate, authorize(1), ProductController.update);
+router.delete('/:id', authenticate, authorize(1), ProductController.delete);
+router.get('/deleted/list', authenticate, authorize(1), ProductController.getDeleted);
+router.post('/:id/restore', authenticate, authorize(1), ProductController.restore);
+router.put('/:id/stock', authenticate, authorize(1), ProductController.updateStock);
+
+/**
+ * Product Image Routes - Admin only
+ */
+router.post('/:id/images', authenticate, authorize(1), ProductController.addImage);
+router.delete('/:id/images/:imageUrl', authenticate, authorize(1), ProductController.removeImage);
+router.put('/:id/images/primary', authenticate, authorize(1), ProductController.setPrimaryImage);
+router.put('/:id/images', authenticate, authorize(1), ProductController.updateImages);
+
+module.exports = router;
+

@@ -1,0 +1,18 @@
+// Minimal CSS - Using Ant Design components for styling
+// Only custom styles that can't be achieved with Ant Design props
+
+.checkout-page {
+  // Keep only essential layout styles
+  padding: 40px 20px;
+  background: #f8f9fa;
+  min-height: calc(100vh - 200px);
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 768px) {
+    padding: 20px 16px;
+  }
+}

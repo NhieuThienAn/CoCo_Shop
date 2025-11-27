@@ -1,0 +1,104 @@
+.profile-page {
+  padding: 40px 20px;
+  background: #f8f9fa;
+  min-height: calc(100vh - 200px);
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .profile-loading {
+    text-align: center;
+    padding: 100px;
+  }
+
+  .page-title {
+    margin-bottom: 24px;
+    font-size: 32px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .profile-tabs {
+    .ant-tabs-content-holder {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+  }
+
+  .profile-card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: none;
+
+    .profile-info {
+      .profile-avatar-section {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 24px;
+
+        .profile-details {
+          flex: 1;
+
+          .profile-name {
+            margin-bottom: 8px;
+            font-size: 24px;
+          }
+        }
+      }
+
+      .info-item {
+        padding: 12px 0;
+        border-bottom: 1px solid #f0f0f0;
+
+        &:last-child {
+          border-bottom: none;
+        }
+      }
+    }
+  }
+
+  .address-card {
+    border-radius: 12px;
+    transition: all 0.3s ease;
+
+    &.default-address {
+      border: 2px solid #52c41a;
+      background: #f6ffed;
+    }
+
+    &:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .address-content {
+      line-height: 1.8;
+    }
+  }
+
+  .security-section {
+    text-align: center;
+    padding: 24px;
+  }
+
+  @media (max-width: 768px) {
+    padding: 20px 16px;
+
+    .page-title {
+      font-size: 24px;
+    }
+
+    .profile-info {
+      .profile-avatar-section {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+  }
+}

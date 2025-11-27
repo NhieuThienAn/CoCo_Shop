@@ -1,0 +1,83 @@
+.orders-page {
+  padding: 40px 20px;
+  background: #f8f9fa;
+  min-height: calc(100vh - 200px);
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .orders-loading {
+    text-align: center;
+    padding: 100px;
+  }
+
+  .page-title {
+    margin-bottom: 24px;
+    font-size: 32px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .order-detail-header {
+    margin-bottom: 24px;
+  }
+
+  .order-detail-card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    .order-item-product {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .product-thumbnail {
+        border-radius: 8px;
+        border: 1px solid #e8e8e8;
+      }
+
+      .product-info {
+        flex: 1;
+      }
+    }
+  }
+
+  .empty-orders-card {
+    text-align: center;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .order-card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+
+    &:hover {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .order-info {
+      display: flex;
+      align-items: center;
+    }
+  }
+
+  @media (max-width: 768px) {
+    padding: 20px 16px;
+
+    .page-title {
+      font-size: 24px;
+    }
+
+    .order-card {
+      .ant-card-head-title {
+        font-size: 16px;
+      }
+    }
+  }
+}

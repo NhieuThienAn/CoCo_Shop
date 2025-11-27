@@ -1,0 +1,154 @@
+{
+  "totalTables": 0,
+  "totalModels": 29,
+  "checked": [],
+  "missing": [
+    {
+      "model": "User.js",
+      "table": "users",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Role.js",
+      "table": "roles",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Address.js",
+      "table": "addresses",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Category.js",
+      "table": "categories",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Brand.js",
+      "table": "brands",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Order.js",
+      "table": "orders",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "OrderItem.js",
+      "table": "orderitems",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "OrderStatus.js",
+      "table": "orderstatus",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "CartItem.js",
+      "table": "cartitems",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Payment.js",
+      "table": "payments",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "PaymentMethod.js",
+      "table": "paymentmethods",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "PaymentStatus.js",
+      "table": "paymentstatus",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Review.js",
+      "table": "reviews",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Wishlist.js",
+      "table": "wishlist",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "Coupon.js",
+      "table": "coupons",
+      "reason": "File rỗng (0 bytes)"
+    },
+    {
+      "model": "TokenBlacklist.js",
+      "table": "tokenblacklist",
+      "reason": "File rỗng (0 bytes)"
+    }
+  ],
+  "errors": [
+    {
+      "model": "Product.js",
+      "table": "products",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "Supplier.js",
+      "table": "suppliers",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "Bank.js",
+      "table": "banks",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "BankAccount.js",
+      "table": "bank_accounts",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "BankTransaction.js",
+      "table": "bank_transactions",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "BankTransferRequest.js",
+      "table": "bank_transfer_requests",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "BankApiLog.js",
+      "table": "bank_api_logs",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "BankReconciliation.js",
+      "table": "bank_reconciliations",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "Shipment.js",
+      "table": "shipments",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "Shipper.js",
+      "table": "shippers",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "PurchaseOrder.js",
+      "table": "purchaseorders",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "ReturnRequest.js",
+      "table": "returnrequests",
+      "error": "Không tìm thấy schema trong database"
+    },
+    {
+      "model": "InventoryTransaction.js",
+      "table": "inventorytransactions",
+      "error": "Không tìm thấy schema trong database"
+    }
+  ]
+}

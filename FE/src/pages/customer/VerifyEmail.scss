@@ -1,0 +1,39 @@
+.verify-email-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+
+  .verify-email-container {
+    width: 100%;
+    max-width: 480px;
+
+    .verify-card {
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      background: white;
+
+      .ant-card-body {
+        padding: 32px;
+      }
+    }
+  }
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .verify-email-page {
+    padding: 16px;
+
+    .verify-email-container {
+      .verify-card {
+        .ant-card-body {
+          padding: 24px;
+        }
+      }
+    }
+  }
+}
+

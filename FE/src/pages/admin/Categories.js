@@ -1,0 +1,329 @@
+import React, { useEffect, useState } from 'react';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  Switch,
+  Space,
+  Popconfirm,
+  message,
+  Typography,
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { category } from '../../api/index.js';
+
+const { Title } = Typography;
+const { TextArea } = Input;
+
+// Utility function to convert Vietnamese text to slug
+const generateSlug = (text) => {
+  if (!text) return '';
+  
+  // Vietnamese character mapping
+  const vietnameseMap = {
+    'à': 'a', 'á': 'a', 'ạ': 'a', 'ả': 'a', 'ã': 'a',
+    'â': 'a', 'ầ': 'a', 'ấ': 'a', 'ậ': 'a', 'ẩ': 'a', 'ẫ': 'a',
+    'ă': 'a', 'ằ': 'a', 'ắ': 'a', 'ặ': 'a', 'ẳ': 'a', 'ẵ': 'a',
+    'è': 'e', 'é': 'e', 'ẹ': 'e', 'ẻ': 'e', 'ẽ': 'e',
+    'ê': 'e', 'ề': 'e', 'ế': 'e', 'ệ': 'e', 'ể': 'e', 'ễ': 'e',
+    'ì': 'i', 'í': 'i', 'ị': 'i', 'ỉ': 'i', 'ĩ': 'i',
+    'ò': 'o', 'ó': 'o', 'ọ': 'o', 'ỏ': 'o', 'õ': 'o',
+    'ô': 'o', 'ồ': 'o', 'ố': 'o', 'ộ': 'o', 'ổ': 'o', 'ỗ': 'o',
+    'ơ': 'o', 'ờ': 'o', 'ớ': 'o', 'ợ': 'o', 'ở': 'o', 'ỡ': 'o',
+    'ù': 'u', 'ú': 'u', 'ụ': 'u', 'ủ': 'u', 'ũ': 'u',
+    'ư': 'u', 'ừ': 'u', 'ứ': 'u', 'ự': 'u', 'ử': 'u', 'ữ': 'u',
+    'ỳ': 'y', 'ý': 'y', 'ỵ': 'y', 'ỷ': 'y', 'ỹ': 'y',
+    'đ': 'd',
+    'À': 'A', 'Á': 'A', 'Ạ': 'A', 'Ả': 'A', 'Ã': 'A',
+    'Â': 'A', 'Ầ': 'A', 'Ấ': 'A', 'Ậ': 'A', 'Ẩ': 'A', 'Ẫ': 'A',
+    'Ă': 'A', 'Ằ': 'A', 'Ắ': 'A', 'Ặ': 'A', 'Ẳ': 'A', 'Ẵ': 'A',
+    'È': 'E', 'É': 'E', 'Ẹ': 'E', 'Ẻ': 'E', 'Ẽ': 'E',
+    'Ê': 'E', 'Ề': 'E', 'Ế': 'E', 'Ệ': 'E', 'Ể': 'E', 'Ễ': 'E',
+    'Ì': 'I', 'Í': 'I', 'Ị': 'I', 'Ỉ': 'I', 'Ĩ': 'I',
+    'Ò': 'O', 'Ó': 'O', 'Ọ': 'O', 'Ỏ': 'O', 'Õ': 'O',
+    'Ô': 'O', 'Ồ': 'O', 'Ố': 'O', 'Ộ': 'O', 'Ổ': 'O', 'Ỗ': 'O',
+    'Ơ': 'O', 'Ờ': 'O', 'Ớ': 'O', 'Ợ': 'O', 'Ở': 'O', 'Ỡ': 'O',
+    'Ù': 'U', 'Ú': 'U', 'Ụ': 'U', 'Ủ': 'U', 'Ũ': 'U',
+    'Ư': 'U', 'Ừ': 'U', 'Ứ': 'U', 'Ự': 'U', 'Ử': 'U', 'Ữ': 'U',
+    'Ỳ': 'Y', 'Ý': 'Y', 'Ỵ': 'Y', 'Ỷ': 'Y', 'Ỹ': 'Y',
+    'Đ': 'D',
+  };
+  
+  return text
+    .trim()
+    .toLowerCase()
+    .split('')
+    .map(char => vietnameseMap[char] || char)
+    .join('')
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+};
+
+const AdminCategories = () => {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    setLoading(true);
+    try {
+      const response = await category.getCategoryTree();
+      if (response.success) {
+        setCategories(response.data || []);
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi tải danh mục');
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi tải danh mục';
+      message.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (values) => {
+    try {
+      let response;
+      if (editingCategory) {
+        response = await category.updateCategory(editingCategory.category_id, values);
+      } else {
+        response = await category.createCategory(values);
+      }
+      if (response.success) {
+        message.success(editingCategory ? 'Cập nhật danh mục thành công' : 'Tạo danh mục thành công');
+        setShowForm(false);
+        setEditingCategory(null);
+        form.resetFields();
+        loadCategories();
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi lưu danh mục');
+      }
+    } catch (error) {
+      console.error('Error saving category:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi lưu danh mục';
+      message.error(errorMessage);
+    }
+  };
+
+  const handleEdit = (cat) => {
+    setEditingCategory(cat);
+    form.setFieldsValue({
+      name: cat.name || '',
+      slug: cat.slug || '',
+      description: cat.description || '',
+      parent_id: cat.parent_id || undefined,
+    });
+    setShowForm(true);
+  };
+
+  const handleGenerateSlug = () => {
+    const name = form.getFieldValue('name');
+    if (!name || !name.trim()) {
+      message.warning('Vui lòng nhập tên danh mục trước');
+      return;
+    }
+    const slug = generateSlug(name);
+    form.setFieldsValue({ slug });
+    message.success('Đã tạo slug tự động');
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      const response = await category.deleteCategory(id);
+      if (response.success) {
+        message.success('Xóa danh mục thành công');
+        loadCategories();
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi xóa danh mục');
+      }
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi xóa danh mục';
+      message.error(errorMessage);
+    }
+  };
+
+  const flattenCategories = (cats, level = 0) => {
+    let result = [];
+    cats.forEach((cat) => {
+      result.push({ ...cat, level });
+      if (cat.children && cat.children.length > 0) {
+        result = result.concat(flattenCategories(cat.children, level + 1));
+      }
+    });
+    return result;
+  };
+
+  const columns = [
+    {
+      title: 'ID',
+      dataIndex: 'category_id',
+      key: 'category_id',
+      width: 80,
+    },
+    {
+      title: 'Tên Danh Mục',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text, record) => (
+        <span style={{ paddingLeft: record.level * 20 }}>
+          {'─'.repeat(record.level)} {text}
+        </span>
+      ),
+    },
+    {
+      title: 'Slug',
+      dataIndex: 'slug',
+      key: 'slug',
+    },
+    {
+      title: 'Thao Tác',
+      key: 'action',
+      width: 150,
+      render: (_, record) => (
+        <Space>
+          <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)}>
+            Sửa
+          </Button>
+          <Popconfirm
+            title="Bạn có chắc muốn xóa danh mục này?"
+            onConfirm={() => handleDelete(record.category_id)}
+            okText="Xóa"
+            cancelText="Hủy"
+          >
+            <Button type="primary" danger icon={<DeleteOutlined />} size="small">
+              Xóa
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <Title level={2} style={{ margin: 0 }}>Quản Lý Danh Mục</Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setEditingCategory(null);
+            form.resetFields();
+            setShowForm(true);
+          }}
+        >
+          Thêm Danh Mục
+        </Button>
+      </div>
+
+      <Table
+        columns={columns}
+        dataSource={flattenCategories(categories)}
+        rowKey="category_id"
+        loading={loading}
+        locale={{ emptyText: 'Chưa có danh mục nào' }}
+      />
+
+      <Modal
+        title={editingCategory ? 'Sửa Danh Mục' : 'Thêm Danh Mục'}
+        open={showForm}
+        onCancel={() => {
+          setShowForm(false);
+          setEditingCategory(null);
+          form.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+        >
+          <Form.Item
+            name="name"
+            label="Tên Danh Mục"
+            rules={[{ required: true, message: 'Vui lòng nhập tên danh mục' }]}
+          >
+            <Input 
+              placeholder="Nhập tên danh mục" 
+              onChange={(e) => {
+                // Auto-generate slug when name changes (only if slug is empty)
+                const currentSlug = form.getFieldValue('slug');
+                if (!currentSlug || currentSlug.trim() === '') {
+                  const autoSlug = generateSlug(e.target.value);
+                  form.setFieldsValue({ slug: autoSlug });
+                }
+              }}
+            />
+          </Form.Item>
+          <Form.Item 
+            name="slug" 
+            label="Slug"
+            tooltip="Slug sẽ được tạo tự động từ tên danh mục. Bạn có thể chỉnh sửa nếu cần."
+          >
+            <Input.Group compact>
+              <Input 
+                style={{ width: 'calc(100% - 120px)' }}
+                placeholder="Slug sẽ được tạo tự động từ tên danh mục" 
+              />
+              <Button
+                type="default"
+                icon={<ThunderboltOutlined />}
+                onClick={handleGenerateSlug}
+                style={{ width: '120px' }}
+              >
+                Tạo tự động
+              </Button>
+            </Input.Group>
+          </Form.Item>
+          <Form.Item name="description" label="Mô Tả">
+            <TextArea rows={4} placeholder="Nhập mô tả" />
+          </Form.Item>
+          <Form.Item name="parent_id" label="Danh Mục Cha">
+            <Select placeholder="Chọn danh mục cha" allowClear>
+              {flattenCategories(categories)
+                .filter((cat) => !editingCategory || cat.category_id !== editingCategory.category_id)
+                .map((cat) => (
+                  <Select.Option key={cat.category_id} value={cat.category_id}>
+                    {'─'.repeat(cat.level || 0)} {cat.name}
+                  </Select.Option>
+                ))}
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                Lưu
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingCategory(null);
+                  form.resetFields();
+                }}
+              >
+                Hủy
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default AdminCategories;

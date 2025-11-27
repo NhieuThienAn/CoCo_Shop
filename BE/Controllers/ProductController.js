@@ -1,0 +1,2524 @@
+// ============================================
+// IMPORT MODULES
+// ============================================
+// Import BaseController factory function
+// BaseController cung cấp các HTTP handlers cơ bản (getAll, getById, create, update, delete, count)
+const createBaseController = require('./BaseController');
+
+// Import product model từ Models/index.js
+// product là instance của Product model đã được khởi tạo
+const { product } = require('../Models');
+
+// ============================================
+// PRODUCT CONTROLLER FACTORY FUNCTION
+// ============================================
+/**
+ * Tạo ProductController với các HTTP handlers cho quản lý sản phẩm
+ * ProductController kế thừa tất cả handlers từ BaseController và override/thêm các handlers riêng
+ * 
+ * @returns {Object} ProductController object với các handlers:
+ * - Từ BaseController: getAll, getById, create, update, delete, count (một số được override)
+ * - Riêng Product: getBySlug, getBySku, getByCategory, getActive, search, 
+ *   softDelete, getDeleted, restore, updateStock, addImage, removeImage, 
+ *   setPrimaryImage, getPrimaryImage, updateImages
+ */
+const createProductController = () => {
+  // Tạo baseController từ BaseController với product model
+  // baseController sẽ có các handlers cơ bản: getAll, getById, create, update, delete, count
+  const baseController = createBaseController(product);
+
+  // ============================================
+  // CREATE FUNCTION: Override create từ BaseController
+  // ============================================
+  /**
+   * HTTP Handler: POST /products
+   * Override create từ BaseController để thêm validation đầy đủ cho sản phẩm
+   * 
+   * Validation bao gồm:
+   * - Kiểm tra các trường bắt buộc (name, slug, sku, price)
+   * - Kiểm tra SKU và slug đã tồn tại chưa (duplicate check)
+   * - Validate và xử lý images (validate, normalize, kiểm tra kích thước)
+   * 
+   * Request Body:
+   * - name: Tên sản phẩm (bắt buộc)
+   * - slug: URL-friendly name (bắt buộc, unique)
+   * - sku: Stock Keeping Unit (bắt buộc, unique)
+   * - price: Giá sản phẩm (bắt buộc, >= 0)
+   * - category_id: ID danh mục (tùy chọn)
+   * - stock_quantity: Số lượng tồn kho (mặc định: 0)
+   * - is_active: Trạng thái active (mặc định: 1)
+   * - images: Mảng các image objects (tùy chọn)
+   * - ...otherData: Các trường khác
+   * 
+   * Response:
+   * - 201: Created { success: true, message: "...", data: {...} }
+   * - 400: Bad Request (validation error)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const create = async (req, res) => {
+    // ============================================
+    // BƯỚC 1: Logging - Ghi log thông tin request
+    // ============================================
+    console.log('========================================');
+    console.log('[ProductController] create function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    // Log request body (đã format JSON để dễ đọc)
+    console.log('[ProductController] Request body:', JSON.stringify(req.body, null, 2));
+    
+    try {
+      // ============================================
+      // BƯỚC 2: Extract và destructure data từ request body
+      // ============================================
+      // Destructure các trường quan trọng với giá trị mặc định
+      // ...otherData: Lấy tất cả các trường còn lại (rest operator)
+      const {
+        name,                    // Tên sản phẩm (bắt buộc)
+        slug,                    // Slug (bắt buộc, unique)
+        sku,                     // SKU (bắt buộc, unique)
+        price,                   // Giá sản phẩm (bắt buộc)
+        category_id,             // ID danh mục (tùy chọn)
+        stock_quantity = 0,      // Số lượng tồn kho (mặc định: 0)
+        is_active = 1,           // Trạng thái active (mặc định: 1 = active)
+        ...otherData             // Các trường khác (description, images, etc.)
+      } = req.body;
+
+      // Log các data đã extract để debug
+      console.log('[ProductController] Extracted data:', {
+        name,
+        slug,
+        sku,
+        price,
+        category_id,
+        stock_quantity,
+        is_active,
+        otherDataKeys: Object.keys(otherData)  // Các keys trong otherData
+      });
+
+      // ============================================
+      // BƯỚC 3: Validation các trường bắt buộc
+      // ============================================
+      
+      // Validation 1: Tên sản phẩm
+      // Kiểm tra name có tồn tại và không rỗng (sau khi trim)
+      if (!name || !name.trim()) {
+        console.log('[ProductController] ❌ Validation failed: Missing name');
+        return res.status(400).json({
+          success: false,
+          message: 'Tên sản phẩm là bắt buộc',
+        });
+      }
+
+      // Validation 2: Slug
+      // Kiểm tra slug có tồn tại và không rỗng
+      if (!slug || !slug.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Slug là bắt buộc',
+        });
+      }
+
+      // Validation 3: SKU
+      // Kiểm tra SKU có tồn tại và không rỗng
+      if (!sku || !sku.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'SKU là bắt buộc',
+        });
+      }
+
+      // Validation 4: Price
+      // Kiểm tra price có tồn tại, không null, và >= 0
+      // parseFloat(price) < 0: Chuyển sang số và kiểm tra < 0
+      if (price === undefined || price === null || parseFloat(price) < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Giá sản phẩm phải >= 0',
+        });
+      }
+
+      // ============================================
+      // BƯỚC 4: Kiểm tra SKU và slug đã tồn tại chưa (duplicate check)
+      // ============================================
+      // Sử dụng Promise.all để chạy 2 queries song song (tối ưu performance)
+      // Thay vì chạy tuần tự (chậm hơn), chạy song song (nhanh hơn)
+      console.log('[ProductController] 🔍 Checking if SKU and slug exist (parallel)...');
+      
+      // Promise.all chạy 2 promises song song:
+      // 1. product.findBySku(sku): Tìm sản phẩm có SKU này
+      // 2. product.findBySlug(slug): Tìm sản phẩm có slug này
+      const [existingSku, existingSlug] = await Promise.all([
+        product.findBySku(sku),      // Query 1: Tìm theo SKU
+        product.findBySlug(slug)     // Query 2: Tìm theo slug
+      ]);
+      
+      // Kiểm tra SKU đã tồn tại chưa
+      if (existingSku) {
+        console.log('[ProductController] ❌ SKU already exists');
+        // Trả về 400 nếu SKU đã tồn tại (SKU phải unique)
+        return res.status(400).json({
+          success: false,
+          message: 'SKU đã tồn tại',
+        });
+      }
+      console.log('[ProductController] ✅ SKU is available');
+
+      // Kiểm tra slug đã tồn tại chưa
+      if (existingSlug) {
+        console.log('[ProductController] ❌ Slug already exists');
+        // Trả về 400 nếu slug đã tồn tại (slug phải unique)
+        return res.status(400).json({
+          success: false,
+          message: 'Slug đã tồn tại',
+        });
+      }
+      console.log('[ProductController] ✅ Slug is available');
+
+      // ============================================
+      // BƯỚC 5: Validate và xử lý images nếu có
+      // ============================================
+      // Khai báo biến để lưu images data (sẽ là JSON string sau khi serialize)
+      let imagesData = null;
+      
+      // Extract images từ otherData và loại bỏ nó để tránh conflict
+      // Destructure: tách images ra, giữ lại các trường khác trong otherDataWithoutImages
+      const { images: imagesArray, ...otherDataWithoutImages } = otherData;
+      
+      // Nếu có images trong request body
+      if (imagesArray !== undefined) {
+        // Kiểm tra images có phải là array không
+        if (Array.isArray(imagesArray)) {
+          // ============================================
+          // BƯỚC 5.1: Validate từng image
+          // ============================================
+          // Duyệt qua từng image và validate
+          for (const img of imagesArray) {
+            // Gọi product.validateImage để kiểm tra image hợp lệ
+            // validateImage kiểm tra: image là object, có url hợp lệ
+            if (!product.validateImage(img)) {
+              return res.status(400).json({
+                success: false,
+                message: `Image không hợp lệ: ${JSON.stringify(img)}. Mỗi image cần có url.`,
+              });
+            }
+          }
+          
+          // ============================================
+          // BƯỚC 5.2: Normalize images
+          // ============================================
+          // Map qua từng image để normalize format
+          const normalizedImages = imagesArray.map((img, index) => ({
+            url: img.url.trim(),                    // Trim URL để loại bỏ spaces
+            alt: img.alt || '',                     // Alt text (mặc định: '')
+            // is_primary: Image đầu tiên hoặc image được set is_primary = true
+            is_primary: img.is_primary === true || index === 0,  // Image đầu tiên là primary mặc định
+            // order: Thứ tự hiển thị (mặc định: index)
+            order: img.order !== undefined ? parseInt(img.order) : index,
+          }));
+          
+          // ============================================
+          // BƯỚC 5.3: Đảm bảo chỉ có một primary image
+          // ============================================
+          // Chỉ image đầu tiên được set là primary, các image khác = false
+          if (normalizedImages.length > 0) {
+            normalizedImages.forEach((img, idx) => {
+              if (idx > 0) img.is_primary = false;  // Chỉ image đầu tiên (idx=0) là primary
+            });
+          }
+          
+          // Sắp xếp images theo order (thứ tự hiển thị)
+          normalizedImages.sort((a, b) => (a.order || 0) - (b.order || 0));
+          
+          // ============================================
+          // BƯỚC 5.4: Kiểm tra tổng kích thước images
+          // ============================================
+          // Kiểm tra kích thước trước khi serialize để tránh vượt quá giới hạn database
+          console.log('[ProductController] 📏 Checking images size...');
+          
+          // Tính tổng kích thước của tất cả images (tính bằng bytes - độ dài string)
+          let totalSize = 0;
+          
+          // Map qua từng image để tính size và log
+          const imageSizes = normalizedImages.map((img, idx) => {
+            // Size = độ dài của URL string (bytes)
+            // Nếu là base64 image, URL sẽ rất dài
+            const size = img.url ? img.url.length : 0;
+            totalSize += size;  // Cộng dồn vào totalSize
+            
+            // Log size của từng image
+            console.log(`[ProductController] Image ${idx + 1} size:`, {
+              sizeBytes: size,                                    // Size tính bằng bytes
+              sizeKB: (size / 1024).toFixed(2),                   // Size tính bằng KB
+              sizeMB: (size / (1024 * 1024)).toFixed(2),         // Size tính bằng MB
+              urlPreview: img.url ? (img.url.length > 100 ? img.url.substring(0, 100) + '...' : img.url) : 'no url',  // Preview URL (chỉ 100 ký tự đầu)
+              isBase64: img.url ? img.url.startsWith('data:') : false,  // Có phải base64 image không
+            });
+            return size;
+          });
+          
+          // Log tổng kích thước
+          console.log('[ProductController] 📊 Total images size:', {
+            totalSizeBytes: totalSize,
+            totalSizeKB: (totalSize / 1024).toFixed(2),
+            totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
+            imageCount: normalizedImages.length,
+          });
+          
+          // ============================================
+          // BƯỚC 5.5: Validate tổng kích thước không vượt quá giới hạn
+          // ============================================
+          // MySQL max_allowed_packet thường là 16MB (16777216 bytes)
+          // Giới hạn 10MB để an toàn (10485760 bytes)
+          const MAX_IMAGES_SIZE = 10 * 1024 * 1024; // 10MB
+          
+          // Nếu tổng kích thước vượt quá giới hạn
+          if (totalSize > MAX_IMAGES_SIZE) {
+            const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+            const maxSizeMB = (MAX_IMAGES_SIZE / (1024 * 1024)).toFixed(2);
+            console.error('[ProductController] ❌ Images too large:', {
+              totalSizeMB: totalSizeMB,
+              maxSizeMB: maxSizeMB,
+            });
+            // Trả về 400 với message rõ ràng
+            return res.status(400).json({
+              success: false,
+              message: `Tổng kích thước hình ảnh quá lớn (${totalSizeMB}MB). Vui lòng giảm kích thước hình ảnh hoặc sử dụng ít hình ảnh hơn. Tối đa: ${maxSizeMB}MB`,
+            });
+          }
+          
+          // ============================================
+          // BƯỚC 5.6: Serialize images thành JSON string
+          // ============================================
+          // Convert mảng images thành JSON string để lưu vào database
+          imagesData = product.serializeImages(normalizedImages);
+          
+          // Log kích thước sau khi serialize
+          console.log('[ProductController] ✅ Images serialized, size:', {
+            serializedSizeBytes: imagesData ? imagesData.length : 0,
+            serializedSizeKB: imagesData ? (imagesData.length / 1024).toFixed(2) : 0,
+            serializedSizeMB: imagesData ? (imagesData.length / (1024 * 1024)).toFixed(2) : 0,
+          });
+        } 
+        // Nếu images không phải là array
+        else {
+          return res.status(400).json({
+            success: false,
+            message: 'Images phải là một mảng',
+          });
+        }
+      }
+
+      // ============================================
+      // BƯỚC 6: Tạo product trong database
+      // ============================================
+      console.log('[ProductController] 💾 Creating product in database...');
+      
+      // Log thông tin images data trước khi lưu
+      console.log('[ProductController] Images data to save:', {
+        hasImages: !!imagesData,                                    // Có images không
+        imagesDataType: typeof imagesData,                          // Kiểu dữ liệu (string)
+        imagesDataLength: imagesData ? imagesData.length : 0,       // Độ dài (bytes)
+        imagesDataSizeKB: imagesData ? (imagesData.length / 1024).toFixed(2) : 0,  // Size KB
+        imagesDataSizeMB: imagesData ? (imagesData.length / (1024 * 1024)).toFixed(2) : 0,  // Size MB
+        imagesDataPreview: typeof imagesData === 'string' 
+          ? (imagesData.length > 200 ? imagesData.substring(0, 200) + '...' : imagesData)  // Preview 200 ký tự đầu
+          : imagesData,
+      });
+      
+      // ============================================
+      // BƯỚC 6.1: Tạo productData object
+      // ============================================
+      // Tạo object chứa tất cả dữ liệu cần insert vào database
+      const productData = {
+        name: name.trim(),                    // Tên sản phẩm (đã trim)
+        slug: slug.trim(),                    // Slug (đã trim)
+        sku: sku.trim(),                      // SKU (đã trim)
+        price: parseFloat(price),             // Giá (parse sang float)
+        category_id: category_id || null,     // ID danh mục (null nếu không có)
+        stock_quantity: parseInt(stock_quantity) || 0,  // Số lượng tồn kho (parse sang int, mặc định 0)
+        is_active: is_active ? 1 : 0,         // Trạng thái active (1 = active, 0 = inactive)
+        deleted_at: null,                     // Đảm bảo không bị xóa khi tạo mới (soft delete)
+        ...otherDataWithoutImages,            // Spread otherData trước (không có images)
+        images: imagesData,                   // Set images sau để đảm bảo nó là string đã serialize
+        created_at: new Date(),               // Thời gian tạo
+        updated_at: new Date(),               // Thời gian cập nhật
+      };
+      // Log productData trước khi tạo (chỉ preview images 200 ký tự đầu)
+      console.log('[ProductController] Product data to create:', {
+        ...productData,
+        images: typeof productData.images === 'string' 
+          ? (productData.images.length > 200 ? productData.images.substring(0, 200) + '...' : productData.images)
+          : productData.images,
+      });
+      
+      // ============================================
+      // BƯỚC 6.2: Gọi model.create để insert vào database
+      // ============================================
+      // Gọi product.create để tạo record mới
+      // result sẽ chứa insertId (ID của record vừa tạo)
+      const result = await product.create(productData);
+      console.log('[ProductController] ✅ Product created with ID:', result.insertId);
+
+      // ============================================
+      // BƯỚC 7: Fetch product vừa tạo để trả về
+      // ============================================
+      // Fetch lại product vừa tạo để đảm bảo có đầy đủ dữ liệu
+      // (có thể có default values, timestamps được set bởi database)
+      const newProduct = await product.findById(result.insertId);
+      
+      console.log('[ProductController] Retrieved created product:', {
+        productId: newProduct?.id || newProduct?.product_id,
+        name: newProduct?.name,
+        hasImages: !!newProduct?.images,
+        imagesType: typeof newProduct?.images,
+      });
+      
+      // ============================================
+      // BƯỚC 8: Parse images để trả về dạng array
+      // ============================================
+      // Database lưu images dưới dạng JSON string
+      // Parse về dạng array để frontend dễ sử dụng
+      if (newProduct && newProduct.images) {
+        console.log('[ProductController] Parsing images from created product...');
+        try {
+          // Gọi product.parseImages để parse JSON string thành array
+          const parsedImages = product.parseImages(newProduct.images);
+          
+          console.log('[ProductController] Parsed images from created product:', {
+            count: parsedImages.length,
+            images: parsedImages.map(img => ({
+              url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+              alt: img.alt,
+              is_primary: img.is_primary,
+              order: img.order,
+            })),
+          });
+          
+          // Thay thế images string bằng array đã parse
+          newProduct.images = parsedImages;
+        } catch (parseError) {
+          // Nếu parse fail, log lỗi và set images = []
+          console.error('[ProductController] ❌ Error parsing images from created product:', parseError);
+          newProduct.images = [];
+        }
+      } else {
+        console.log('[ProductController] Created product has no images');
+      }
+
+      // ============================================
+      // BƯỚC 9: Trả về response thành công
+      // ============================================
+      console.log('[ProductController] ✅✅✅ PRODUCT CREATED SUCCESSFULLY ✅✅✅');
+      console.log('[ProductController] Product ID:', result.insertId);
+      console.log('[ProductController] Product Name:', newProduct?.name);
+      console.log('========================================');
+
+      // Trả về JSON response với status 201 (Created)
+      return res.status(201).json({
+        success: true,
+        message: 'Tạo sản phẩm thành công',
+        data: newProduct,  // Product đầy đủ với images đã parse
+      });
+    } 
+    // ============================================
+    // ERROR HANDLING: Xử lý lỗi
+    // ============================================
+    catch (error) {
+      // Log lỗi chi tiết để debug
+      console.error('[ProductController] ❌❌❌ ERROR IN create ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,        // Tên error (ví dụ: "ValidationError")
+        message: error.message,  // Error message
+        code: error.code          // Error code (ví dụ: "ER_DUP_ENTRY" cho MySQL duplicate)
+      });
+      console.log('========================================');
+      
+      // Trả về error response với status 400 (Bad Request)
+      return res.status(400).json({
+        success: false,
+        message: 'Lỗi khi tạo sản phẩm',
+        error: error.message,  // Hiển thị error message (có thể là validation error, duplicate, etc.)
+      });
+    }
+  }
+
+  // ============================================
+  // UPDATE FUNCTION: Override update từ BaseController
+  // ============================================
+  /**
+   * HTTP Handler: PUT /products/:id hoặc PATCH /products/:id
+   * Override update từ BaseController để thêm validation đầy đủ cho sản phẩm
+   * 
+   * Validation bao gồm:
+   * - Kiểm tra product tồn tại và chưa bị xóa
+   * - Validate các trường nếu có (name, slug, sku, price, stock_quantity)
+   * - Kiểm tra SKU và slug duplicate (nếu thay đổi)
+   * - Xử lý images update nếu có
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm cần cập nhật (bắt buộc)
+   * 
+   * Request Body:
+   * - name, slug, sku, price, stock_quantity: Các trường có thể cập nhật (tùy chọn)
+   * - images: Mảng images để cập nhật (tùy chọn)
+   * - deleted_at: KHÔNG được phép update qua method này (phải dùng softDelete)
+   * - ...updateData: Các trường khác
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: {...} }
+   * - 400: Bad Request (validation error)
+   * - 404: Not Found (product không tồn tại)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const update = async (req, res) => {
+    // ============================================
+    // BƯỚC 1: Logging và khởi tạo
+    // ============================================
+    console.log('========================================');
+    console.log('[ProductController] update function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Request body:', JSON.stringify(req.body, null, 2));
+    
+    // Lưu thời gian bắt đầu để tính duration
+    const startTime = Date.now();
+    
+    try {
+      // ============================================
+      // BƯỚC 2: Extract data từ request
+      // ============================================
+      // Lấy id từ URL params
+      const { id } = req.params;
+      
+      // Destructure các trường quan trọng từ request body
+      // deleted_at được tách ra để không cho phép update (bảo mật)
+      const {
+        name,                    // Tên sản phẩm (tùy chọn)
+        slug,                    // Slug (tùy chọn)
+        sku,                     // SKU (tùy chọn)
+        price,                   // Giá (tùy chọn)
+        stock_quantity,          // Số lượng tồn kho (tùy chọn)
+        deleted_at,              // Không cho phép update deleted_at qua update method (phải dùng softDelete)
+        ...updateData            // Các trường khác (description, images, etc.)
+      } = req.body;
+      // Log data đã extract
+      console.log('[ProductController] Extracted data:', {
+        productId: id,
+        name,
+        slug,
+        sku,
+        price,
+        stock_quantity,
+        updateDataKeys: Object.keys(updateData)  // Các keys trong updateData
+      });
+
+      // ============================================
+      // BƯỚC 3: Validate ID
+      // ============================================
+      if (!id) {
+        console.log('[ProductController] ❌ Validation failed: Missing product ID');
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID là bắt buộc',
+        });
+      }
+
+      // ============================================
+      // BƯỚC 4: Kiểm tra product tồn tại
+      // ============================================
+      console.log('[ProductController] 🔍 Checking if product exists...');
+      const existing = await product.findById(id);
+      
+      if (!existing) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: existing.product_id,
+        name: existing.name,
+        isDeleted: !!existing.deleted_at
+      });
+
+      // ============================================
+      // BƯỚC 5: Kiểm tra product chưa bị xóa
+      // ============================================
+      // Không cho phép update product đã bị soft delete
+      if (existing.deleted_at) {
+        console.log('[ProductController] ❌ Product already deleted');
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể cập nhật sản phẩm đã bị xóa. Vui lòng khôi phục trước.',
+        });
+      }
+
+      console.log('[ProductController] ✅ Product is active, proceeding with validation...');
+      
+      // ============================================
+      // BƯỚC 6: Validation các trường (nếu có)
+      // ============================================
+      // Chỉ validate nếu trường được cung cấp (undefined = không update)
+      
+      // Validation 1: Name
+      if (name !== undefined && (!name || !name.trim())) {
+        console.log('[ProductController] ❌ Validation failed: Empty name');
+        return res.status(400).json({
+          success: false,
+          message: 'Tên sản phẩm không được để trống',
+        });
+      }
+
+      if (slug !== undefined && (!slug || !slug.trim())) {
+        console.log('[ProductController] ❌ Validation failed: Empty slug');
+        return res.status(400).json({
+          success: false,
+          message: 'Slug không được để trống',
+        });
+      }
+
+      if (sku !== undefined && (!sku || !sku.trim())) {
+        console.log('[ProductController] ❌ Validation failed: Empty SKU');
+        return res.status(400).json({
+          success: false,
+          message: 'SKU không được để trống',
+        });
+      }
+
+      if (price !== undefined && (price === null || parseFloat(price) < 0)) {
+        console.log('[ProductController] ❌ Validation failed: Invalid price');
+        return res.status(400).json({
+          success: false,
+          message: 'Giá sản phẩm phải >= 0',
+        });
+      }
+
+      if (stock_quantity !== undefined && parseInt(stock_quantity) < 0) {
+        console.log('[ProductController] ❌ Validation failed: Invalid stock quantity');
+        return res.status(400).json({
+          success: false,
+          message: 'Số lượng tồn kho phải >= 0',
+        });
+      }
+
+      // ============================================
+      // BƯỚC 7: Kiểm tra SKU và slug duplicate (nếu thay đổi)
+      // ============================================
+      // Chỉ kiểm tra duplicate nếu SKU/slug được thay đổi (khác với giá trị hiện tại)
+      const needsSkuCheck = sku && sku !== existing.sku;    // Cần check nếu SKU thay đổi
+      const needsSlugCheck = slug && slug !== existing.slug;  // Cần check nếu slug thay đổi
+      
+      // Nếu có thay đổi SKU hoặc slug, kiểm tra duplicate
+      if (needsSkuCheck || needsSlugCheck) {
+        console.log('[ProductController] 🔍 Checking if new SKU/slug exist (parallel)...');
+        
+        // Tạo mảng promises để chạy song song
+        const checkPromises = [];
+        
+        // Nếu cần check SKU, thêm promise vào mảng
+        if (needsSkuCheck) {
+          checkPromises.push(
+            product.findBySku(sku).then(result => ({ type: 'sku', result }))
+          );
+        }
+        
+        // Nếu cần check slug, thêm promise vào mảng
+        if (needsSlugCheck) {
+          checkPromises.push(
+            product.findBySlug(slug).then(result => ({ type: 'slug', result }))
+          );
+        }
+        
+        // Chạy tất cả promises song song
+        const checkResults = await Promise.all(checkPromises);
+        
+        // Kiểm tra kết quả
+        for (const { type, result } of checkResults) {
+          // Nếu tìm thấy SKU và không phải là chính product này
+          if (type === 'sku' && result && result.id !== parseInt(id)) {
+            console.log('[ProductController] ❌ SKU already exists');
+            return res.status(400).json({
+              success: false,
+              message: 'SKU đã tồn tại',
+            });
+          }
+          
+          // Nếu tìm thấy slug và không phải là chính product này
+          if (type === 'slug' && result && result.id !== parseInt(id)) {
+            console.log('[ProductController] ❌ Slug already exists');
+            return res.status(400).json({
+              success: false,
+              message: 'Slug đã tồn tại',
+            });
+          }
+        }
+        
+        // Log success nếu không có duplicate
+        if (needsSkuCheck) console.log('[ProductController] ✅ SKU is available');
+        if (needsSlugCheck) console.log('[ProductController] ✅ Slug is available');
+      }
+
+      // ============================================
+      // BƯỚC 8: Xử lý images update nếu có
+      // ============================================
+      // Nếu có images trong updateData, xử lý riêng
+      if (updateData.images !== undefined) {
+        console.log('[ProductController] 🖼️ Processing images update...');
+        
+        // Kiểm tra images phải là array
+        if (Array.isArray(updateData.images)) {
+          try {
+            // Gọi product.updateImages để cập nhật images
+            // Method này sẽ validate, normalize, và serialize images
+            await product.updateImages(id, updateData.images);
+            console.log('[ProductController] ✅ Images updated successfully');
+          } catch (error) {
+            console.log('[ProductController] ❌ Error updating images:', error.message);
+            return res.status(400).json({
+              success: false,
+              message: error.message,
+            });
+          }
+          
+          // Xóa images khỏi updateData vì đã xử lý riêng
+          delete updateData.images;
+        } else {
+          console.log('[ProductController] ❌ Validation failed: Images must be an array');
+          return res.status(400).json({
+            success: false,
+            message: 'Images phải là một mảng',
+          });
+        }
+      }
+
+      // ============================================
+      // BƯỚC 9: Chuẩn bị update payload
+      // ============================================
+      console.log('[ProductController] ✏️ Preparing update payload...');
+      
+      // Tạo updatePayload với các trường cần update
+      const updatePayload = {
+        ...updateData,              // Spread các trường khác
+        updated_at: new Date(),     // Cập nhật timestamp
+      };
+
+      // Chỉ thêm các trường vào payload nếu được cung cấp (undefined = không update)
+      if (name !== undefined) updatePayload.name = name.trim();
+      if (slug !== undefined) updatePayload.slug = slug.trim();
+      if (sku !== undefined) updatePayload.sku = sku.trim();
+      if (price !== undefined) updatePayload.price = parseFloat(price);
+      if (stock_quantity !== undefined) updatePayload.stock_quantity = parseInt(stock_quantity);
+
+      // ============================================
+      // BƯỚC 10: Cập nhật product trong database
+      // ============================================
+      console.log('[ProductController] 💾 Updating product in database...');
+      
+      // Gọi product.update để cập nhật record
+      await product.update(id, updatePayload);
+      
+      // ============================================
+      // BƯỚC 11: Fetch product sau khi update
+      // ============================================
+      console.log('[ProductController] 🔍 Fetching updated product...');
+      const updated = await product.findById(id);
+      
+      console.log('[ProductController] Retrieved updated product:', {
+        productId: updated?.id || updated?.product_id,
+        name: updated?.name,
+        hasImages: !!updated?.images,
+        imagesType: typeof updated?.images,
+      });
+      
+      // ============================================
+      // BƯỚC 12: Parse images để trả về dạng array
+      // ============================================
+      // Database lưu images dưới dạng JSON string, parse về array
+      if (updated && updated.images) {
+        console.log('[ProductController] Parsing images from updated product...');
+        try {
+          const parsedImages = product.parseImages(updated.images);
+          console.log('[ProductController] Parsed images from updated product:', {
+            count: parsedImages.length,
+            images: parsedImages.map(img => ({
+              url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+              alt: img.alt,
+              is_primary: img.is_primary,
+              order: img.order,
+            })),
+          });
+          updated.images = parsedImages;
+        } catch (parseError) {
+          console.error('[ProductController] ❌ Error parsing images from updated product:', parseError);
+          updated.images = [];
+        }
+      } else {
+        console.log('[ProductController] Updated product has no images');
+      }
+
+      // ============================================
+      // BƯỚC 13: Trả về response thành công
+      // ============================================
+      // Tính duration (thời gian xử lý)
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅✅✅ PRODUCT UPDATED SUCCESSFULLY ✅✅✅');
+      console.log('[ProductController] Duration:', duration, 'ms');
+      console.log('========================================');
+
+      // Trả về JSON response với status 200 (OK)
+      return res.status(200).json({
+        success: true,
+        message: 'Cập nhật sản phẩm thành công',
+        data: updated,  // Product đã được cập nhật với images đã parse
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN update ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Lỗi khi cập nhật sản phẩm',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // DELETE FUNCTION: Override delete từ BaseController
+  // ============================================
+  /**
+   * HTTP Handler: DELETE /products/:id
+   * Override delete từ BaseController để CHỈ cho phép soft delete (không hard delete)
+   * 
+   * Soft delete: Chỉ set deleted_at = current timestamp, không xóa record khỏi database
+   * Lợi ích: Có thể khôi phục sau, giữ lại lịch sử
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm cần xóa (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "Xóa sản phẩm thành công (soft delete)" }
+   * - 400: Bad Request (thiếu ID, đã bị xóa)
+   * - 404: Not Found (không tìm thấy)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const deleteProduct = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] deleteProduct function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { id } = req.params;
+      console.log('[ProductController] Extracted productId:', id);
+
+      if (!id) {
+        console.log('[ProductController] ❌ Validation failed: Missing product ID');
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Checking if product exists...');
+      const existing = await product.findById(id);
+
+      if (!existing) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: existing.product_id,
+        name: existing.name,
+        isDeleted: !!existing.deleted_at
+      });
+
+      if (existing.deleted_at) {
+        console.log('[ProductController] ❌ Product already deleted');
+        return res.status(400).json({
+          success: false,
+          message: 'Sản phẩm đã bị xóa trước đó',
+        });
+      }
+
+      console.log('[ProductController] 🗑️ Performing soft delete...');
+      await product.softDelete(id);
+      console.log('[ProductController] ✅ Product soft deleted successfully');
+      
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ deleteProduct completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Xóa sản phẩm thành công (soft delete)',
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN deleteProduct ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Lỗi khi xóa sản phẩm',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET BY ID FUNCTION: Override getById từ BaseController
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/:id
+   * Override getById từ BaseController để filter deleted products
+   * 
+   * Query Parameters:
+   * - includeDeleted: true/false - Có bao gồm sản phẩm đã bị xóa không (mặc định: false)
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm cần lấy (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: {...} }
+   * - 400: Bad Request (thiếu ID)
+   * - 404: Not Found (không tìm thấy hoặc đã bị xóa)
+   * 
+   * Đặc biệt:
+   * - Tự động parse images từ JSON string thành array
+   * - Tự động set primary_image nếu chưa có
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getById = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getById function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { id } = req.params;
+      const { includeDeleted = false } = req.query;
+      console.log('[ProductController] Extracted data:', { productId: id, includeDeleted });
+
+      if (!id) {
+        console.log('[ProductController] ❌ Validation failed: Missing product ID');
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Finding product by ID...');
+      const data = await product.findById(id);
+
+      if (!data) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: data.product_id,
+        name: data.name,
+        isDeleted: !!data.deleted_at
+      });
+
+      // Nếu không có flag includeDeleted và sản phẩm đã bị xóa
+      if (!includeDeleted && data.deleted_at) {
+        console.log('[ProductController] ❌ Product is deleted and includeDeleted is false');
+        return res.status(404).json({
+          success: false,
+          message: 'Sản phẩm đã bị xóa',
+        });
+      }
+
+      // Parse images để trả về dạng array
+      console.log('[ProductController] 🖼️  Processing images for getById...');
+      console.log('[ProductController] Product data:', {
+        productId: data?.id || data?.product_id,
+        name: data?.name,
+        hasImages: !!data?.images,
+        imagesType: typeof data?.images,
+        imagesValue: typeof data?.images === 'string' 
+          ? (data.images.length > 100 ? data.images.substring(0, 100) + '...' : data.images)
+          : data?.images,
+        hasPrimaryImage: !!data?.primary_image,
+        primaryImage: data?.primary_image,
+      });
+      
+      if (data && data.images) {
+        try {
+          const parsedImages = product.parseImages(data.images);
+          console.log('[ProductController] Parsed images:', {
+            count: parsedImages.length,
+            images: parsedImages.map(img => ({
+              url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+              alt: img.alt,
+              is_primary: img.is_primary,
+              order: img.order,
+            })),
+          });
+          
+          data.images = parsedImages;
+          
+          // Set primary_image if not set
+          if (!data.primary_image && parsedImages.length > 0) {
+            const primaryImg = parsedImages.find(img => img.is_primary) || parsedImages[0];
+            data.primary_image = primaryImg?.url;
+            console.log('[ProductController] Set primary_image:', {
+              url: data.primary_image ? (data.primary_image.length > 50 ? data.primary_image.substring(0, 50) + '...' : data.primary_image) : 'null',
+            });
+          } else if (data.primary_image) {
+            console.log('[ProductController] Product already has primary_image:', {
+              url: data.primary_image.length > 50 ? data.primary_image.substring(0, 50) + '...' : data.primary_image,
+            });
+          } else {
+            console.log('[ProductController] ⚠️  Product has no primary_image and no images');
+          }
+        } catch (parseError) {
+          console.error('[ProductController] ❌ Error parsing images:', parseError);
+          data.images = [];
+        }
+      } else {
+        console.log('[ProductController] Product has no images field');
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getById completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getById ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET BY SLUG FUNCTION: Lấy product theo slug
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/slug/:slug
+   * Lấy product theo slug (URL-friendly identifier)
+   * 
+   * Query Parameters:
+   * - includeDeleted: true/false - Có bao gồm sản phẩm đã bị xóa không (mặc định: false)
+   * 
+   * URL Params:
+   * - slug: Slug của sản phẩm (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: {...} }
+   * - 400: Bad Request (thiếu slug)
+   * - 404: Not Found (không tìm thấy hoặc đã bị xóa)
+   * 
+   * Đặc biệt:
+   * - Tự động parse images từ JSON string thành array
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getBySlug = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getBySlug function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { slug } = req.params;
+      const { includeDeleted = false } = req.query;
+      console.log('[ProductController] Extracted data:', { slug, includeDeleted });
+
+      if (!slug || !slug.trim()) {
+        console.log('[ProductController] ❌ Validation failed: Missing slug');
+        return res.status(400).json({
+          success: false,
+          message: 'Slug là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Finding product by slug...');
+      const data = await product.findBySlug(slug.trim());
+
+      if (!data) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: data.product_id,
+        name: data.name,
+        isDeleted: !!data.deleted_at
+      });
+
+      // Nếu không có flag includeDeleted và sản phẩm đã bị xóa
+      if (!includeDeleted && data.deleted_at) {
+        console.log('[ProductController] ❌ Product is deleted and includeDeleted is false');
+        return res.status(404).json({
+          success: false,
+          message: 'Sản phẩm đã bị xóa',
+        });
+      }
+
+      // Parse images để trả về dạng array
+      if (data && data.images) {
+        data.images = product.parseImages(data.images);
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getBySlug completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getBySlug ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET BY SKU FUNCTION: Lấy product theo SKU
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/sku/:sku
+   * Lấy product theo SKU (Stock Keeping Unit)
+   * 
+   * Query Parameters:
+   * - includeDeleted: true/false - Có bao gồm sản phẩm đã bị xóa không (mặc định: false)
+   * 
+   * URL Params:
+   * - sku: SKU của sản phẩm (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: {...} }
+   * - 400: Bad Request (thiếu SKU)
+   * - 404: Not Found (không tìm thấy hoặc đã bị xóa)
+   * 
+   * Đặc biệt:
+   * - Tự động parse images từ JSON string thành array
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getBySku = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getBySku function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { sku } = req.params;
+      const { includeDeleted = false } = req.query;
+      console.log('[ProductController] Extracted data:', { sku, includeDeleted });
+
+      if (!sku || !sku.trim()) {
+        console.log('[ProductController] ❌ Validation failed: Missing SKU');
+        return res.status(400).json({
+          success: false,
+          message: 'SKU là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Finding product by SKU...');
+      const data = await product.findBySku(sku.trim());
+
+      if (!data) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: data.product_id,
+        name: data.name,
+        isDeleted: !!data.deleted_at
+      });
+
+      // Nếu không có flag includeDeleted và sản phẩm đã bị xóa
+      if (!includeDeleted && data.deleted_at) {
+        console.log('[ProductController] ❌ Product is deleted and includeDeleted is false');
+        return res.status(404).json({
+          success: false,
+          message: 'Sản phẩm đã bị xóa',
+        });
+      }
+
+      // Parse images để trả về dạng array
+      if (data && data.images) {
+        data.images = product.parseImages(data.images);
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getBySku completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getBySku ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET BY CATEGORY FUNCTION: Lấy products theo category
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/category/:categoryId
+   * Lấy danh sách products theo category ID
+   * 
+   * Query Parameters:
+   * - page: Số trang (mặc định: 1)
+   * - limit: Số lượng/trang (mặc định: 10)
+   * 
+   * URL Params:
+   * - categoryId: ID của category (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: [...] }
+   * - 400: Bad Request (thiếu categoryId)
+   * 
+   * Đặc biệt:
+   * - Tự động parse images cho tất cả products
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getByCategory = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getByCategory function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { categoryId } = req.params;
+      const { page = 1, limit = 10 } = req.query;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      console.log('[ProductController] Extracted data:', {
+        categoryId,
+        page,
+        limit,
+        offset
+      });
+
+      if (!categoryId) {
+        console.log('[ProductController] ❌ Validation failed: Missing categoryId');
+        return res.status(400).json({
+          success: false,
+          message: 'Category ID là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Fetching products by category...');
+      const data = await product.findByCategory(categoryId, {
+        limit: parseInt(limit),
+        offset,
+      });
+      console.log('[ProductController] ✅ Products found:', data?.length || 0);
+
+      // Parse images cho tất cả products
+      if (Array.isArray(data)) {
+        console.log('[ProductController] 🖼️ Parsing images for products...');
+        data.forEach(item => {
+          if (item.images) {
+            item.images = product.parseImages(item.images);
+          }
+        });
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getByCategory completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getByCategory ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET ACTIVE FUNCTION: Lấy products active
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/active
+   * Lấy danh sách products đang active (is_active = 1 và chưa bị xóa)
+   * 
+   * Query Parameters:
+   * - page: Số trang (mặc định: 1)
+   * - limit: Số lượng/trang (mặc định: 10)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: [...] }
+   * 
+   * Đặc biệt:
+   * - Chỉ lấy products có is_active = 1 và deleted_at = null
+   * - Tự động parse images cho tất cả products
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getActive = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getActive function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { page = 1, limit = 10 } = req.query;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      console.log('[ProductController] Pagination:', { page, limit, offset });
+
+      console.log('[ProductController] 🔍 Fetching active products...');
+      console.log('[ProductController] Using filters: is_active=1, deleted_at=null');
+      const data = await product.findActive({
+        limit: parseInt(limit),
+        offset,
+      });
+      console.log('[ProductController] ✅ Active products found:', data?.length || 0);
+      
+      if (!data || data.length === 0) {
+        console.log('[ProductController] ⚠️  No active products found');
+        console.log('[ProductController] 🔍 Debugging: Checking product status in database...');
+        // Use single SQL query with CASE WHEN to get all statistics counts
+        // This replaces multiple individual COUNT queries
+        const stats = await product.getProductStatisticsCounts();
+        console.log('[ProductController] 📊 Product statistics (single query):', stats);
+      }
+
+      // Parse images cho tất cả products
+      if (Array.isArray(data)) {
+        console.log('[ProductController] 🖼️ Parsing images for products...');
+        data.forEach(item => {
+          if (item.images) {
+            item.images = product.parseImages(item.images);
+          }
+        });
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getActive completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getActive ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // SEARCH FUNCTION: Tìm kiếm products
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/search
+   * Tìm kiếm products theo keyword (tìm trong name, description, SKU)
+   * 
+   * Query Parameters:
+   * - keyword: Từ khóa tìm kiếm (bắt buộc)
+   * - page: Số trang (mặc định: 1)
+   * - limit: Số lượng/trang (mặc định: 10)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: [...] }
+   * - 400: Bad Request (thiếu keyword)
+   * 
+   * Đặc biệt:
+   * - Tìm kiếm trong name, description, SKU
+   * - Tự động parse images cho tất cả products
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const search = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] search function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { keyword } = req.query;
+      const { page = 1, limit = 10 } = req.query;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      console.log('[ProductController] Search parameters:', {
+        keyword,
+        page,
+        limit,
+        offset
+      });
+
+      if (!keyword || !keyword.trim()) {
+        console.log('[ProductController] ❌ Validation failed: Missing keyword');
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng nhập từ khóa tìm kiếm',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Searching products with keyword:', keyword.trim());
+      const data = await product.search(keyword.trim(), {
+        limit: parseInt(limit),
+        offset,
+      });
+      console.log('[ProductController] ✅ Search results:', data?.length || 0);
+
+      // Parse images cho tất cả products
+      if (Array.isArray(data)) {
+        console.log('[ProductController] 🖼️ Parsing images for products...');
+        data.forEach(item => {
+          if (item.images) {
+            item.images = product.parseImages(item.images);
+          }
+        });
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ search completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN search ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi tìm kiếm',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // SOFT DELETE FUNCTION: Alias cho deleteProduct
+  // ============================================
+  /**
+   * HTTP Handler: DELETE /products/:id/soft
+   * Alias cho deleteProduct method
+   * Giữ lại để backward compatibility
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response (từ deleteProduct)
+   */
+  const softDelete = async (req, res) => {
+    return deleteProduct(req, res);
+  };
+
+  // ============================================
+  // GET DELETED FUNCTION: Lấy danh sách sản phẩm đã bị xóa
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/deleted
+   * Lấy danh sách sản phẩm đã bị soft delete (admin only)
+   * 
+   * Query Parameters:
+   * - page: Số trang (mặc định: 1)
+   * - limit: Số lượng/trang (mặc định: 10)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: [...], pagination: {...} }
+   * 
+   * Đặc biệt:
+   * - Sử dụng window function COUNT(*) OVER() để tối ưu (1 query thay vì 2)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getDeleted = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getDeleted function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Query:', req.query);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { page = 1, limit = 10 } = req.query;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      console.log('[ProductController] Pagination:', { page, limit, offset });
+
+      console.log('[ProductController] 🔍 Fetching deleted products...');
+      // Use single SQL query with window function COUNT(*) OVER() to get data and total count
+      // This replaces Promise.all with 2 separate queries
+      const { data, total } = await product.getDeletedWithCount({
+        limit: parseInt(limit),
+        offset,
+      });
+      console.log('[ProductController] ✅ Deleted products found:', {
+        count: data?.length || 0,
+        total
+      });
+
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ getDeleted completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        data,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit)),
+        },
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN getDeleted ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // RESTORE FUNCTION: Khôi phục sản phẩm đã bị xóa
+  // ============================================
+  /**
+   * HTTP Handler: POST /products/:id/restore
+   * Khôi phục sản phẩm đã bị soft delete (set deleted_at = null)
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm cần khôi phục (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "Khôi phục thành công" }
+   * - 400: Bad Request (thiếu ID, sản phẩm chưa bị xóa)
+   * - 404: Not Found (không tìm thấy)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const restore = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] restore function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    
+    const startTime = Date.now();
+    
+    try {
+      const { id } = req.params;
+      console.log('[ProductController] Extracted productId:', id);
+
+      if (!id) {
+        console.log('[ProductController] ❌ Validation failed: Missing product ID');
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID là bắt buộc',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Checking if product exists...');
+      const existing = await product.findById(id);
+      if (!existing) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: existing.product_id,
+        name: existing.name,
+        isDeleted: !!existing.deleted_at
+      });
+
+      if (!existing.deleted_at) {
+        console.log('[ProductController] ⚠️ Product is not deleted');
+        return res.status(400).json({
+          success: false,
+          message: 'Sản phẩm chưa bị xóa',
+        });
+      }
+
+      console.log('[ProductController] 🔄 Restoring product...');
+      await product.restore(id);
+      console.log('[ProductController] ✅ Product restored successfully');
+      
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ restore completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Khôi phục thành công',
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN restore ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Lỗi khi khôi phục',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // UPDATE STOCK FUNCTION: Cập nhật số lượng tồn kho
+  // ============================================
+  /**
+   * HTTP Handler: PUT /products/:id/stock
+   * Cập nhật số lượng tồn kho của sản phẩm
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * 
+   * Request Body:
+   * - quantityChange: Số lượng thay đổi (có thể âm để giảm, dương để tăng) (bắt buộc)
+   * - note: Ghi chú cho thay đổi (tùy chọn)
+   * - createdBy: ID người thực hiện (tùy chọn)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: {...} }
+   * - 400: Bad Request (thiếu ID, thiếu quantityChange, không đủ stock)
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * Đặc biệt:
+   * - Tự động ghi inventory transaction để tracking
+   * - Kiểm tra stock không được < 0
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const updateStock = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] updateStock function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request method:', req.method);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Request body:', JSON.stringify(req.body, null, 2));
+    
+    const startTime = Date.now();
+    
+    try {
+      const { id } = req.params;
+      const { quantityChange, note, createdBy } = req.body;
+      console.log('[ProductController] Extracted data:', {
+        productId: id,
+        quantityChange,
+        hasNote: !!note,
+        createdBy
+      });
+
+      if (!id) {
+        console.log('[ProductController] ❌ Validation failed: Missing product ID');
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID là bắt buộc',
+        });
+      }
+
+      if (quantityChange === undefined) {
+        console.log('[ProductController] ❌ Validation failed: Missing quantityChange');
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng cung cấp quantityChange',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Checking if product exists...');
+      const productData = await product.findById(id);
+      if (!productData) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      console.log('[ProductController] ✅ Product found:', {
+        productId: productData.product_id,
+        name: productData.name,
+        currentStock: productData.stock_quantity,
+        isDeleted: !!productData.deleted_at
+      });
+
+      // Kiểm tra sản phẩm đã bị xóa chưa
+      if (productData.deleted_at) {
+        console.log('[ProductController] ❌ Product is deleted');
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể cập nhật stock cho sản phẩm đã bị xóa',
+        });
+      }
+
+      const newStock = (productData.stock_quantity || 0) + parseInt(quantityChange);
+      console.log('[ProductController] Stock calculation:', {
+        currentStock: productData.stock_quantity || 0,
+        quantityChange: parseInt(quantityChange),
+        newStock
+      });
+
+      if (newStock < 0) {
+        console.log('[ProductController] ❌ Validation failed: Insufficient stock');
+        return res.status(400).json({
+          success: false,
+          message: 'Số lượng tồn kho không đủ',
+        });
+      }
+
+      console.log('[ProductController] 📦 Updating stock...');
+      await product.updateStock(id, parseInt(quantityChange));
+      
+      console.log('[ProductController] 📝 Recording inventory transaction...');
+      // Ghi inventory transaction
+      const { inventoryTransaction } = require('../Models');
+      await inventoryTransaction.recordTransaction(
+        id,
+        parseInt(quantityChange),
+        quantityChange > 0 ? 'IN' : 'OUT',
+        note || 'Manual adjustment',
+        createdBy
+      );
+      console.log('[ProductController] ✅ Inventory transaction recorded');
+
+      console.log('[ProductController] 🔍 Fetching updated product...');
+      const updated = await product.findById(id);
+      console.log('[ProductController] ✅ Stock updated successfully');
+      console.log('[ProductController] New stock:', updated?.stock_quantity);
+      
+      const duration = Date.now() - startTime;
+      console.log('[ProductController] ✅ updateStock completed successfully in', duration, 'ms');
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Cập nhật stock thành công',
+        data: updated,
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN updateStock ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code
+      });
+      console.log('========================================');
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Lỗi khi cập nhật stock',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET ALL FUNCTION: Override getAll từ BaseController
+  // ============================================
+  /**
+   * HTTP Handler: GET /products
+   * Override getAll từ BaseController để filter products theo trạng thái
+   * 
+   * Query Parameters:
+   * - page: Số trang (mặc định: 1)
+   * - limit: Số lượng/trang (mặc định: 10)
+   * - includeDeleted: true/false - Có bao gồm sản phẩm đã bị xóa không (mặc định: false)
+   * - includeInactive: true/false - Có bao gồm sản phẩm inactive không (mặc định: false)
+   * - orderBy: Câu lệnh ORDER BY (mặc định: 'sort_order ASC, created_at DESC')
+   * - ...filters: Các filter khác (category_id, brand_id, etc.)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: [...], pagination: {...} }
+   * 
+   * Đặc biệt:
+   * - Mặc định chỉ lấy products active và chưa bị xóa
+   * - Admin có thể xem tất cả bằng cách truyền includeDeleted=true và includeInactive=true
+   * - Sử dụng window function COUNT(*) OVER() để tối ưu (1 query thay vì 2)
+   * - Tự động parse images cho tất cả products
+   * - Tự động set primary_image nếu chưa có
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getAll = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] getAll function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Request URL:', req.originalUrl);
+    console.log('[ProductController] Query params:', req.query);
+    console.log('[ProductController] User:', req.user ? { userId: req.user.userId, roleId: req.user.roleId } : 'No user');
+    
+    try {
+      const { page = 1, limit = 10, includeDeleted = false, includeInactive = false, ...filters } = req.query;
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+
+      console.log('[ProductController] 📋 Initial filters:', {
+        page,
+        limit,
+        offset,
+        includeDeleted,
+        includeInactive,
+        otherFilters: filters,
+      });
+
+      // Check if user is admin (role_id = 1)
+      const isAdmin = req.user && req.user.roleId === 1;
+      console.log('[ProductController] 👤 User check:', {
+        hasUser: !!req.user,
+        isAdmin,
+        roleId: req.user?.roleId,
+      });
+
+      // Thêm filter mặc định - chỉ áp dụng nếu không phải admin request
+      // Admin có thể truyền includeDeleted=true và includeInactive=true để xem tất cả
+      // Hoặc nếu user là admin, tự động include tất cả
+      const shouldIncludeDeleted = includeDeleted === 'true' || includeDeleted === true || isAdmin;
+      const shouldIncludeInactive = includeInactive === 'true' || includeInactive === true || isAdmin;
+      
+      console.log('[ProductController] 🔍 Filter logic:', {
+        shouldIncludeDeleted,
+        shouldIncludeInactive,
+        includeDeletedValue: includeDeleted,
+        includeInactiveValue: includeInactive,
+      });
+      
+      if (!shouldIncludeDeleted) {
+        filters.deleted_at = null;
+        console.log('[ProductController] ✅ Added filter: deleted_at = null');
+      } else {
+        console.log('[ProductController] ⚠️  Including deleted products');
+      }
+
+      if (!shouldIncludeInactive) {
+        // Use number 1 to match database tinyint(1) format
+        filters.is_active = 1;
+        console.log('[ProductController] ✅ Added filter: is_active = 1');
+      } else {
+        console.log('[ProductController] ⚠️  Including inactive products');
+      }
+
+      console.log('[ProductController] 📋 Final filters:', filters);
+
+      // Use single SQL query with window function COUNT(*) OVER() to get data and total count
+      // This replaces Promise.all with 2 separate queries (findAll + count)
+      const { data, total } = await product.findAllWithCount({
+        filters,
+        limit: parseInt(limit),
+        offset,
+        orderBy: req.query.orderBy || 'sort_order ASC, created_at DESC',
+      });
+
+      console.log('[ProductController] 📊 Query results:', {
+        dataCount: Array.isArray(data) ? data.length : 0,
+        total,
+        hasData: Array.isArray(data) && data.length > 0,
+      });
+
+      if (Array.isArray(data) && data.length === 0 && total === 0) {
+        console.log('[ProductController] ⚠️  No products found with current filters');
+        console.log('[ProductController] 🔍 Debugging: Checking if products exist in database...');
+        // Use single SQL query with CASE WHEN to get all statistics counts
+        // This replaces multiple individual COUNT queries
+        const stats = await product.getProductStatisticsCounts();
+        console.log('[ProductController] 📊 Product statistics (single query):', stats);
+        
+        if (stats.totalAll === 0) {
+          console.log('[ProductController] ⚠️  No products exist in database at all');
+        }
+      }
+
+      // Parse images cho tất cả products
+      console.log('[ProductController] 🖼️  Processing images for products...');
+      console.log('[ProductController] Products count:', data?.length || 0);
+      
+      if (Array.isArray(data)) {
+        let productsWithImages = 0;
+        let productsWithParsedImages = 0;
+        let productsWithPrimaryImage = 0;
+        
+        data.forEach((item, index) => {
+          const productId = item.id || item.product_id;
+          console.log(`[ProductController] Processing product ${index + 1}/${data.length} (ID: ${productId}):`, {
+            name: item.name,
+            hasImages: !!item.images,
+            imagesType: typeof item.images,
+            imagesValue: typeof item.images === 'string' 
+              ? (item.images.length > 100 ? item.images.substring(0, 100) + '...' : item.images)
+              : item.images,
+            hasPrimaryImage: !!item.primary_image,
+            primaryImage: item.primary_image,
+          });
+          
+          if (item.images) {
+            productsWithImages++;
+            try {
+              const parsedImages = product.parseImages(item.images);
+              console.log(`[ProductController] Parsed images for product ${index + 1}:`, {
+                count: parsedImages.length,
+                images: parsedImages.map(img => ({
+                  url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+                  alt: img.alt,
+                  is_primary: img.is_primary,
+                  order: img.order,
+                })),
+              });
+              
+              item.images = parsedImages;
+              productsWithParsedImages++;
+              
+              // Set primary_image if not set
+              if (!item.primary_image && parsedImages.length > 0) {
+                const primaryImg = parsedImages.find(img => img.is_primary) || parsedImages[0];
+                item.primary_image = primaryImg?.url;
+                console.log(`[ProductController] Set primary_image for product ${index + 1}:`, {
+                  url: item.primary_image ? (item.primary_image.length > 50 ? item.primary_image.substring(0, 50) + '...' : item.primary_image) : 'null',
+                });
+                productsWithPrimaryImage++;
+              } else if (item.primary_image) {
+                productsWithPrimaryImage++;
+                console.log(`[ProductController] Product ${index + 1} already has primary_image:`, {
+                  url: item.primary_image.length > 50 ? item.primary_image.substring(0, 50) + '...' : item.primary_image,
+                });
+              } else {
+                console.log(`[ProductController] ⚠️  Product ${index + 1} has no primary_image and no images`);
+              }
+            } catch (parseError) {
+              console.error(`[ProductController] ❌ Error parsing images for product ${index + 1}:`, parseError);
+              item.images = [];
+            }
+          } else {
+            console.log(`[ProductController] Product ${index + 1} has no images field`);
+          }
+        });
+        
+        console.log('[ProductController] 📊 Images processing summary:', {
+          totalProducts: data.length,
+          productsWithImages,
+          productsWithParsedImages,
+          productsWithPrimaryImage,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit)),
+        },
+      });
+    } catch (error) {
+      console.error('Error in getAll:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy dữ liệu',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // ADD IMAGE FUNCTION: Thêm image vào sản phẩm
+  // ============================================
+  /**
+   * HTTP Handler: POST /products/:id/images
+   * Thêm một image mới vào sản phẩm
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * 
+   * Request Body:
+   * - url: URL của image (bắt buộc)
+   * - alt: Alt text cho image (tùy chọn)
+   * - is_primary: Có phải primary image không (tùy chọn)
+   * - order: Thứ tự hiển thị (tùy chọn)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: { images: [...] } }
+   * - 400: Bad Request (thiếu URL, sản phẩm đã bị xóa)
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const addImage = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { url, alt, is_primary, order } = req.body;
+
+      if (!url || !url.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'URL hình ảnh là bắt buộc',
+        });
+      }
+
+      const productData = await product.findById(id);
+      if (!productData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+
+      if (productData.deleted_at) {
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể thêm image cho sản phẩm đã bị xóa',
+        });
+      }
+
+      const images = await product.addImage(id, {
+        url,
+        alt,
+        is_primary,
+        order,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Thêm hình ảnh thành công',
+        data: { images },
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lỗi khi thêm hình ảnh',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // REMOVE IMAGE FUNCTION: Xóa image khỏi sản phẩm
+  // ============================================
+  /**
+   * HTTP Handler: DELETE /products/:id/images/:imageUrl
+   * Xóa một image khỏi sản phẩm
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * - imageUrl: URL của image cần xóa (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: { images: [...] } }
+   * - 400: Bad Request (sản phẩm đã bị xóa)
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const removeImage = async (req, res) => {
+    try {
+      const { id, imageUrl } = req.params;
+
+      const productData = await product.findById(id);
+      if (!productData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+
+      if (productData.deleted_at) {
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể xóa image của sản phẩm đã bị xóa',
+        });
+      }
+
+      const images = await product.removeImage(id, imageUrl);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Xóa hình ảnh thành công',
+        data: { images },
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lỗi khi xóa hình ảnh',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // SET PRIMARY IMAGE FUNCTION: Đặt image chính
+  // ============================================
+  /**
+   * HTTP Handler: PUT /products/:id/images/primary
+   * Đặt một image làm primary image (hình ảnh chính)
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * 
+   * Request Body:
+   * - imageUrl: URL của image cần đặt làm primary (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: { images: [...] } }
+   * - 400: Bad Request (thiếu imageUrl, sản phẩm đã bị xóa)
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const setPrimaryImage = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { imageUrl } = req.body;
+
+      if (!imageUrl || !imageUrl.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'URL hình ảnh là bắt buộc',
+        });
+      }
+
+      const productData = await product.findById(id);
+      if (!productData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+
+      if (productData.deleted_at) {
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể set primary image cho sản phẩm đã bị xóa',
+        });
+      }
+
+      const images = await product.setPrimaryImage(id, imageUrl.trim());
+
+      return res.status(200).json({
+        success: true,
+        message: 'Đặt hình ảnh chính thành công',
+        data: { images },
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lỗi khi đặt hình ảnh chính',
+        error: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // GET PRIMARY IMAGE FUNCTION: Lấy primary image
+  // ============================================
+  /**
+   * HTTP Handler: GET /products/:id/images/primary
+   * Lấy primary image (hình ảnh chính) của sản phẩm
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * 
+   * Response:
+   * - 200: Success { success: true, data: {...} }
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const getPrimaryImage = async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const productData = await product.findById(id);
+      if (!productData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+
+      const primaryImage = await product.getPrimaryImage(id);
+
+      return res.status(200).json({
+        success: true,
+        data: primaryImage,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi lấy hình ảnh chính',
+        error: error.message,
+      });
+    }
+  };
+
+  // ============================================
+  // UPDATE IMAGES FUNCTION: Cập nhật toàn bộ danh sách images
+  // ============================================
+  /**
+   * HTTP Handler: PUT /products/:id/images
+   * Cập nhật toàn bộ danh sách images của sản phẩm (thay thế toàn bộ)
+   * 
+   * URL Params:
+   * - id: ID của sản phẩm (bắt buộc)
+   * 
+   * Request Body:
+   * - Có thể là array trực tiếp: [{ url, alt, is_primary, order }, ...]
+   * - Hoặc object: { images: [{ url, alt, is_primary, order }, ...] }
+   * 
+   * Response:
+   * - 200: Success { success: true, message: "...", data: { images: [...] } }
+   * - 400: Bad Request (không phải array, sản phẩm đã bị xóa)
+   * - 404: Not Found (không tìm thấy sản phẩm)
+   * 
+   * Đặc biệt:
+   * - Validate, normalize, và serialize images
+   * - Kiểm tra kích thước tổng không vượt quá 10MB
+   * 
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Promise<void>} JSON response
+   */
+  const updateImages = async (req, res) => {
+    console.log('========================================');
+    console.log('[ProductController] 🖼️  updateImages function called');
+    console.log('[ProductController] Request IP:', req.ip);
+    console.log('[ProductController] Params:', req.params);
+    console.log('[ProductController] Request body type:', typeof req.body);
+    console.log('[ProductController] Request body is array:', Array.isArray(req.body));
+    console.log('[ProductController] Request body keys:', Object.keys(req.body || {}));
+    console.log('[ProductController] Request body preview:', JSON.stringify(
+      Array.isArray(req.body) 
+        ? req.body.map(img => ({
+            url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+            alt: img.alt,
+            is_primary: img.is_primary,
+            order: img.order,
+          }))
+        : req.body,
+      null,
+      2
+    ));
+    
+    try {
+      const { id } = req.params;
+      console.log('[ProductController] Product ID:', id);
+      
+      // Support both { images: [...] } and direct array
+      const images = Array.isArray(req.body) ? req.body : req.body.images;
+      console.log('[ProductController] Extracted images:', {
+        isArray: Array.isArray(images),
+        count: Array.isArray(images) ? images.length : 0,
+        images: Array.isArray(images) 
+          ? images.map((img, idx) => ({
+              index: idx,
+              url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+              urlLength: img.url?.length || 0,
+              alt: img.alt,
+              is_primary: img.is_primary,
+              order: img.order,
+            }))
+          : null,
+      });
+
+      if (!Array.isArray(images)) {
+        console.log('[ProductController] ❌ Validation failed: Not an array');
+        console.log('[ProductController] Images value:', images);
+        return res.status(400).json({
+          success: false,
+          message: 'Images phải là một mảng',
+        });
+      }
+
+      console.log('[ProductController] 🔍 Checking if product exists...');
+      const productData = await product.findById(id);
+      if (!productData) {
+        console.log('[ProductController] ❌ Product not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+      
+      console.log('[ProductController] Product found:', {
+        productId: productData.id || productData.product_id,
+        name: productData.name,
+        hasImages: !!productData.images,
+        imagesType: typeof productData.images,
+        isDeleted: !!productData.deleted_at,
+      });
+
+      if (productData.deleted_at) {
+        console.log('[ProductController] ❌ Product is deleted');
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể cập nhật images cho sản phẩm đã bị xóa',
+        });
+      }
+
+      console.log('[ProductController] 📝 Calling product.updateImages...');
+      const updatedImages = await product.updateImages(id, images);
+      console.log('[ProductController] ✅ Images updated successfully');
+      console.log('[ProductController] Updated images:', {
+        count: updatedImages?.length || 0,
+        images: updatedImages?.map(img => ({
+          url: img.url ? (img.url.length > 50 ? img.url.substring(0, 50) + '...' : img.url) : 'no url',
+          alt: img.alt,
+          is_primary: img.is_primary,
+          order: img.order,
+        })) || [],
+      });
+      console.log('========================================');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Cập nhật danh sách hình ảnh thành công',
+        data: { images: updatedImages },
+      });
+    } catch (error) {
+      console.error('[ProductController] ❌❌❌ ERROR IN updateImages ❌❌❌');
+      console.error('[ProductController] Error message:', error.message);
+      console.error('[ProductController] Error stack:', error.stack);
+      console.error('[ProductController] Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+      });
+      console.log('========================================');
+      
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lỗi khi cập nhật hình ảnh',
+        error: error.message,
+      });
+    }
+  };
+
+  // ============================================
+  // RETURN CONTROLLER OBJECT
+  // ============================================
+  // Trả về object chứa tất cả HTTP handlers
+  // Spread baseController để lấy các handlers cơ bản (nếu không được override)
+  // Sau đó override/thêm các handlers riêng của ProductController
+  return {
+    ...baseController,        // Spread các handlers từ BaseController (getAll, getById, create, update, delete, count)
+    create,                    // Override create với validation đầy đủ
+    update,                    // Override update với validation đầy đủ
+    delete: deleteProduct,    // Override delete để chỉ cho phép soft delete
+    getById,                   // Override getById để filter deleted products và parse images
+    getBySlug,                 // Handler riêng: Lấy product theo slug
+    getBySku,                  // Handler riêng: Lấy product theo SKU
+    getByCategory,             // Handler riêng: Lấy products theo category
+    getActive,                 // Handler riêng: Lấy products active
+    search,                    // Handler riêng: Tìm kiếm products
+    softDelete,                // Alias cho deleteProduct (backward compatibility)
+    getDeleted,                // Handler riêng: Lấy danh sách products đã bị xóa
+    restore,                   // Handler riêng: Khôi phục product đã bị xóa
+    updateStock,               // Handler riêng: Cập nhật stock
+    getAll,                    // Override getAll để filter theo trạng thái và parse images
+    addImage,                  // Handler riêng: Thêm image vào sản phẩm
+    removeImage,               // Handler riêng: Xóa image khỏi sản phẩm
+    setPrimaryImage,           // Handler riêng: Đặt primary image
+    getPrimaryImage,           // Handler riêng: Lấy primary image
+    updateImages,              // Handler riêng: Cập nhật toàn bộ danh sách images
+  };
+};
+
+// ============================================
+// EXPORT MODULE
+// ============================================
+// Export ProductController đã được khởi tạo (singleton pattern)
+// Cách sử dụng: const productController = require('./ProductController');
+//               router.get('/', productController.getAll);
+module.exports = createProductController();
+

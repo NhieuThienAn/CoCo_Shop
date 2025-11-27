@@ -1,0 +1,672 @@
+-- website_coco.banks definition
+
+CREATE TABLE `banks` (
+  `bank_id` int(11) NOT NULL AUTO_INCREMENT,
+  `provider_name` varchar(200) NOT NULL,
+  `provider_code` varchar(100) DEFAULT NULL COMMENT 'Mã nội bộ hoặc mã nhà cung cấp (unique nếu có)',
+  `is_internal` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = Ngân hàng nội bộ, 0 = Ngân hàng bên ngoài',
+  `country` varchar(100) DEFAULT 'VN',
+  `support_webhooks` tinyint(1) DEFAULT 0 COMMENT 'Chỉ dùng cho external banks',
+  `api_docs` varchar(1000) DEFAULT NULL COMMENT 'Chỉ dùng cho external banks',
+  `contact_info` text DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`bank_id`),
+  UNIQUE KEY `uk_provider_code` (`provider_code`),
+  KEY `idx_banks_internal` (`is_internal`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.brands definition
+
+CREATE TABLE `brands` (
+  `brand_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(150) NOT NULL,
+  `description` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`brand_id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.coupons definition
+
+CREATE TABLE `coupons` (
+  `coupon_id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(50) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `discount_amount` decimal(12,2) DEFAULT 0.00,
+  `discount_percent` decimal(5,2) DEFAULT 0.00,
+  `min_cart_value` decimal(12,2) DEFAULT 0.00,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `usage_limit` int(11) DEFAULT NULL,
+  `used_count` int(11) DEFAULT 0,
+  `is_active` tinyint(1) DEFAULT 1,
+  `applicable_categories` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa category_ids',
+  `applicable_products` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa product_ids',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`coupon_id`),
+  UNIQUE KEY `code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.orderstatus definition
+
+CREATE TABLE `orderstatus` (
+  `status_id` int(11) NOT NULL AUTO_INCREMENT,
+  `status_name` varchar(50) NOT NULL,
+  `sort_order` int(11) DEFAULT 0,
+  PRIMARY KEY (`status_id`),
+  UNIQUE KEY `status_name` (`status_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.paymentmethods definition
+
+CREATE TABLE `paymentmethods` (
+  `payment_method_id` int(11) NOT NULL AUTO_INCREMENT,
+  `method_name` varchar(100) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`payment_method_id`),
+  UNIQUE KEY `method_name` (`method_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.paymentstatus definition
+
+CREATE TABLE `paymentstatus` (
+  `payment_status_id` int(11) NOT NULL AUTO_INCREMENT,
+  `status_name` varchar(50) NOT NULL,
+  PRIMARY KEY (`payment_status_id`),
+  UNIQUE KEY `status_name` (`status_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.roles definition
+
+CREATE TABLE `roles` (
+  `role_id` int(11) NOT NULL AUTO_INCREMENT,
+  `role_name` varchar(50) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`role_id`),
+  UNIQUE KEY `role_name` (`role_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.shippers definition
+
+CREATE TABLE `shippers` (
+  `shipper_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(150) NOT NULL,
+  `contact_info` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`shipper_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.suppliers definition
+
+CREATE TABLE `suppliers` (
+  `supplier_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(150) NOT NULL,
+  `contact_info` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`supplier_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.tokenblacklist definition
+
+CREATE TABLE `tokenblacklist` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `token` varchar(500) NOT NULL,
+  `token_type` enum('access','refresh') DEFAULT 'access',
+  `expires_at` datetime DEFAULT NULL,
+  `blacklisted_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_token` (`token`(191)),
+  KEY `idx_blacklist_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.categories definition
+
+CREATE TABLE `categories` (
+  `category_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(150) NOT NULL,
+  `slug` varchar(200) NOT NULL,
+  `description` text DEFAULT NULL,
+  `parent_id` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`category_id`),
+  UNIQUE KEY `slug` (`slug`),
+  KEY `parent_id` (`parent_id`),
+  CONSTRAINT `categories_ibfk_1` FOREIGN KEY (`parent_id`) REFERENCES `categories` (`category_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.products definition
+
+CREATE TABLE `products` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `product_id` int(11) NOT NULL COMMENT 'ID gốc để tương thích',
+  `name` varchar(255) NOT NULL,
+  `slug` varchar(255) NOT NULL,
+  `short_description` varchar(500) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `meta_title` varchar(255) DEFAULT NULL,
+  `meta_description` text DEFAULT NULL,
+  `origin` varchar(100) DEFAULT NULL,
+  `manufacturer` varchar(255) DEFAULT NULL,
+  `tags` varchar(500) DEFAULT NULL,
+  `sort_order` int(11) DEFAULT 0,
+  `brand` varchar(255) DEFAULT NULL,
+  `category_id` int(11) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `sku` varchar(100) NOT NULL,
+  `barcode` varchar(100) DEFAULT NULL,
+  `price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `msrp` decimal(12,2) DEFAULT NULL,
+  `stock_quantity` int(11) NOT NULL DEFAULT 0,
+  `volume_ml` int(11) DEFAULT NULL,
+  `images` longblob DEFAULT NULL COMMENT 'Mảng JSON chứa hình ảnh',
+  `attributes` longtext DEFAULT NULL COMMENT 'Object JSON chứa thuộc tính',
+  `ingredients` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa thành phần',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_sku` (`sku`),
+  KEY `idx_products_product_id` (`product_id`),
+  KEY `idx_products_category` (`category_id`),
+  KEY `idx_products_slug` (`slug`),
+  KEY `idx_products_deleted_at` (`deleted_at`),
+  KEY `idx_products_sort_order` (`sort_order`),
+  KEY `idx_products_active` (`is_active`),
+  KEY `idx_products_stock` (`stock_quantity`,`is_active`),
+  CONSTRAINT `products_ibfk_2` FOREIGN KEY (`category_id`) REFERENCES `categories` (`category_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.users definition
+
+CREATE TABLE `users` (
+  `user_id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(100) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `first_name` varchar(100) DEFAULT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `avatar_url` longblob DEFAULT NULL,
+  `bio` text DEFAULT NULL,
+  `role_id` int(11) NOT NULL DEFAULT 1,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `email_verified` tinyint(1) NOT NULL DEFAULT 0,
+  `last_login` datetime DEFAULT NULL,
+  `failed_login_attempts` int(11) DEFAULT 0,
+  `sessions` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa sessions',
+  `tokens` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa tokens',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `username` (`username`),
+  UNIQUE KEY `email` (`email`),
+  KEY `idx_users_role` (`role_id`),
+  KEY `idx_users_email` (`email`),
+  CONSTRAINT `users_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.wishlist definition
+
+CREATE TABLE `wishlist` (
+  `wishlist_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL COMMENT 'Tham chiếu đến products.id (unified)',
+  `added_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`wishlist_id`),
+  UNIQUE KEY `user_product` (`user_id`,`product_id`),
+  KEY `idx_wishlist_product` (`product_id`),
+  CONSTRAINT `wishlist_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+  CONSTRAINT `wishlist_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.addresses definition
+
+CREATE TABLE `addresses` (
+  `address_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `full_name` varchar(100) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `address_line1` varchar(255) NOT NULL,
+  `address_line2` varchar(255) DEFAULT NULL,
+  `city` varchar(100) NOT NULL,
+  `district` varchar(100) DEFAULT NULL,
+  `ward` varchar(100) DEFAULT NULL,
+  `province` varchar(100) DEFAULT NULL,
+  `postal_code` varchar(20) DEFAULT NULL,
+  `country` varchar(100) NOT NULL,
+  `is_default_shipping` tinyint(1) DEFAULT 0,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`address_id`),
+  KEY `idx_addresses_user` (`user_id`),
+  CONSTRAINT `addresses_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.bank_accounts definition
+
+CREATE TABLE `bank_accounts` (
+  `account_id` int(11) NOT NULL AUTO_INCREMENT,
+  `bank_id` int(11) NOT NULL,
+  `account_name` varchar(255) NOT NULL COMMENT 'Tên hiển thị tài khoản (ví dụ: CoCo - Tài khoản chính, CoCo - Thanh toán VN)',
+  `account_number` varchar(128) NOT NULL,
+  `account_type` enum('main','payment','reserve','commission','refund','other') NOT NULL DEFAULT 'main' COMMENT 'Loại tài khoản nội bộ',
+  `iban` varchar(64) DEFAULT NULL COMMENT 'Chỉ dùng cho external banks',
+  `branch` varchar(255) DEFAULT NULL COMMENT 'Chỉ dùng cho external banks',
+  `currency` varchar(10) NOT NULL DEFAULT 'VND',
+  `balance` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Số dư hiện tại',
+  `available_balance` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Số dư khả dụng (balance - pending)',
+  `pending_balance` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Số dư đang chờ xử lý',
+  `status` enum('active','disabled','closed','frozen') NOT NULL DEFAULT 'active',
+  `credentials` longtext DEFAULT NULL COMMENT 'Lưu thông tin kết nối (ENCRYPTED) - CHỈ DÙNG CHO EXTERNAL BANKS',
+  `webhook_url` varchar(1000) DEFAULT NULL COMMENT 'CHỈ DÙNG CHO EXTERNAL BANKS',
+  `last_synced_at` datetime DEFAULT NULL COMMENT 'CHỈ DÙNG CHO EXTERNAL BANKS',
+  `is_internal` tinyint(1) DEFAULT 0 COMMENT '1 = Tài khoản nội bộ, 0 = Tài khoản bên ngoài (tự động sync với banks.is_internal)',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`account_id`),
+  UNIQUE KEY `uk_bank_account` (`bank_id`,`account_number`),
+  KEY `idx_bank_accounts_bank` (`bank_id`),
+  KEY `idx_bank_accounts_status` (`status`),
+  KEY `idx_bank_accounts_internal` (`is_internal`),
+  KEY `idx_bank_accounts_type` (`account_type`),
+  KEY `bank_accounts_fk_user` (`created_by`),
+  KEY `idx_bank_accounts_currency` (`currency`),
+  CONSTRAINT `bank_accounts_fk_bank` FOREIGN KEY (`bank_id`) REFERENCES `banks` (`bank_id`) ON DELETE CASCADE,
+  CONSTRAINT `bank_accounts_fk_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.bank_api_logs definition
+
+CREATE TABLE `bank_api_logs` (
+  `log_id` int(11) NOT NULL AUTO_INCREMENT,
+  `bank_id` int(11) DEFAULT NULL,
+  `account_id` int(11) DEFAULT NULL,
+  `direction` enum('outbound','inbound') NOT NULL,
+  `endpoint` varchar(255) DEFAULT NULL,
+  `request_payload` longtext DEFAULT NULL,
+  `response_payload` longtext DEFAULT NULL,
+  `status_code` int(11) DEFAULT NULL,
+  `duration_ms` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`log_id`),
+  KEY `idx_bank_api_logs_bank` (`bank_id`),
+  KEY `idx_bank_api_logs_account` (`account_id`),
+  KEY `idx_bank_api_logs_created` (`created_at`),
+  CONSTRAINT `bank_api_logs_fk_account` FOREIGN KEY (`account_id`) REFERENCES `bank_accounts` (`account_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_api_logs_fk_bank` FOREIGN KEY (`bank_id`) REFERENCES `banks` (`bank_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.bank_transfer_requests definition
+
+CREATE TABLE `bank_transfer_requests` (
+  `transfer_id` int(11) NOT NULL AUTO_INCREMENT,
+  `account_from_id` int(11) NOT NULL,
+  `account_to_id` int(11) DEFAULT NULL COMMENT 'Tài khoản đích (NULL nếu chuyển ra ngoài)',
+  `account_to_details` longtext DEFAULT NULL COMMENT 'Thông tin đích: account_number, bank_code, beneficiary_name (dùng khi chuyển ra ngoài)',
+  `transfer_type` enum('internal','external') NOT NULL DEFAULT 'internal' COMMENT 'internal = chuyển nội bộ, external = chuyển ra ngoài',
+  `amount` decimal(18,2) NOT NULL,
+  `currency` varchar(10) NOT NULL DEFAULT 'VND',
+  `fee` decimal(18,2) DEFAULT 0.00,
+  `status` enum('pending','processing','completed','failed','cancelled') NOT NULL DEFAULT 'pending',
+  `initiated_by` int(11) DEFAULT NULL,
+  `initiated_at` datetime DEFAULT current_timestamp(),
+  `processed_at` datetime DEFAULT NULL,
+  `external_ref` varchar(255) DEFAULT NULL COMMENT 'Tham chiếu từ hệ thống bên ngoài',
+  `metadata` longtext DEFAULT NULL,
+  PRIMARY KEY (`transfer_id`),
+  KEY `idx_transfer_account_from` (`account_from_id`),
+  KEY `idx_transfer_account_to` (`account_to_id`),
+  KEY `idx_transfer_status` (`status`),
+  KEY `idx_transfer_type` (`transfer_type`),
+  KEY `bank_transfer_fk_user` (`initiated_by`),
+  CONSTRAINT `bank_transfer_fk_account_from` FOREIGN KEY (`account_from_id`) REFERENCES `bank_accounts` (`account_id`) ON DELETE CASCADE,
+  CONSTRAINT `bank_transfer_fk_account_to` FOREIGN KEY (`account_to_id`) REFERENCES `bank_accounts` (`account_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_transfer_fk_user` FOREIGN KEY (`initiated_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.cartitems definition
+
+CREATE TABLE `cartitems` (
+  `cart_item_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL COMMENT 'Tham chiếu đến products.id (unified)',
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `unit_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `product_snapshot` longtext DEFAULT NULL,
+  `unit_price_snapshot` decimal(12,2) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`cart_item_id`),
+  UNIQUE KEY `user_product` (`user_id`,`product_id`),
+  KEY `idx_cartitems_user` (`user_id`),
+  KEY `idx_cartitems_product` (`product_id`),
+  CONSTRAINT `cartitems_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+  CONSTRAINT `cartitems_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.inventorytransactions definition
+
+CREATE TABLE `inventorytransactions` (
+  `inventory_id` int(11) NOT NULL AUTO_INCREMENT,
+  `product_id` int(11) NOT NULL COMMENT 'Tham chiếu đến products.id (unified)',
+  `quantity_change` int(11) NOT NULL,
+  `change_type` enum('IN','OUT','ADJUSTMENT','SALE','RETURN') NOT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `changed_at` datetime DEFAULT current_timestamp(),
+  `created_by` int(11) DEFAULT NULL,
+  PRIMARY KEY (`inventory_id`),
+  KEY `created_by` (`created_by`),
+  KEY `idx_invtrans_product` (`product_id`),
+  CONSTRAINT `inventorytransactions_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `inventorytransactions_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.orders definition
+
+CREATE TABLE `orders` (
+  `order_id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_number` varchar(100) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `shipping_address_id` int(11) DEFAULT NULL,
+  `billing_address_id` int(11) DEFAULT NULL,
+  `status_id` int(11) NOT NULL DEFAULT 1,
+  `order_date` datetime DEFAULT NULL,
+  `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `coupon_id` int(11) DEFAULT NULL,
+  `discount_amount` decimal(12,2) DEFAULT 0.00,
+  `shipping_fee` decimal(12,2) DEFAULT 0.00,
+  `tax_amount` decimal(12,2) DEFAULT 0.00,
+  `currency` varchar(10) DEFAULT 'VND',
+  `processed_by` int(11) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `status_history` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa lịch sử thay đổi status',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`order_id`),
+  UNIQUE KEY `order_number` (`order_number`),
+  KEY `shipping_address_id` (`shipping_address_id`),
+  KEY `billing_address_id` (`billing_address_id`),
+  KEY `processed_by` (`processed_by`),
+  KEY `idx_orders_user` (`user_id`),
+  KEY `idx_orders_status` (`status_id`),
+  KEY `idx_orders_coupon` (`coupon_id`),
+  KEY `idx_orders_orderdate` (`order_date`),
+  CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`shipping_address_id`) REFERENCES `addresses` (`address_id`) ON DELETE SET NULL,
+  CONSTRAINT `orders_ibfk_3` FOREIGN KEY (`billing_address_id`) REFERENCES `addresses` (`address_id`) ON DELETE SET NULL,
+  CONSTRAINT `orders_ibfk_4` FOREIGN KEY (`status_id`) REFERENCES `orderstatus` (`status_id`),
+  CONSTRAINT `orders_ibfk_5` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`coupon_id`) ON DELETE SET NULL,
+  CONSTRAINT `orders_ibfk_6` FOREIGN KEY (`processed_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.payments definition
+
+CREATE TABLE `payments` (
+  `payment_id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_id` int(11) NOT NULL,
+  `payment_method_id` int(11) DEFAULT NULL,
+  `gateway` varchar(100) DEFAULT NULL,
+  `gateway_transaction_id` varchar(255) DEFAULT NULL,
+  `gateway_status` varchar(50) DEFAULT NULL,
+  `gateway_response` longtext DEFAULT NULL,
+  `is_captured` tinyint(1) DEFAULT 0,
+  `refunded_amount` decimal(12,2) DEFAULT 0.00,
+  `attempt_count` int(11) DEFAULT 0,
+  `last_attempt_at` datetime DEFAULT NULL,
+  `metadata` longtext DEFAULT NULL,
+  `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `payment_status_id` int(11) DEFAULT NULL,
+  `paid_at` datetime DEFAULT NULL,
+  `transaction_reference` varchar(255) DEFAULT NULL,
+  `payment_logs` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa payment logs',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`payment_id`),
+  KEY `payment_method_id` (`payment_method_id`),
+  KEY `payment_status_id` (`payment_status_id`),
+  KEY `idx_payments_order` (`order_id`),
+  KEY `idx_payments_gateway_txn` (`gateway_transaction_id`),
+  KEY `idx_payments_gateway_status` (`gateway_status`),
+  CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+  CONSTRAINT `payments_ibfk_2` FOREIGN KEY (`payment_method_id`) REFERENCES `paymentmethods` (`payment_method_id`) ON DELETE SET NULL,
+  CONSTRAINT `payments_ibfk_3` FOREIGN KEY (`payment_status_id`) REFERENCES `paymentstatus` (`payment_status_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.purchaseorders definition
+
+CREATE TABLE `purchaseorders` (
+  `po_id` int(11) NOT NULL AUTO_INCREMENT,
+  `supplier_id` int(11) NOT NULL,
+  `po_number` varchar(100) NOT NULL,
+  `order_date` date NOT NULL,
+  `expected_date` date DEFAULT NULL,
+  `status` varchar(50) DEFAULT 'Pending',
+  `approval_status` enum('pending','approved','rejected') DEFAULT 'pending' COMMENT 'Trạng thái duyệt: pending = chờ duyệt, approved = đã duyệt, rejected = từ chối',
+  `approved_by` int(11) DEFAULT NULL COMMENT 'Người duyệt (user_id)',
+  `approved_at` datetime DEFAULT NULL COMMENT 'Thời gian duyệt',
+  `rejection_reason` text DEFAULT NULL COMMENT 'Lý do từ chối (nếu bị rejected)',
+  `created_by` int(11) DEFAULT NULL,
+  `items` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa các items của PO',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`po_id`),
+  UNIQUE KEY `po_number` (`po_number`),
+  KEY `created_by` (`created_by`),
+  KEY `idx_purchaseorders_supplier` (`supplier_id`),
+  KEY `idx_purchaseorders_approval_status` (`approval_status`),
+  KEY `idx_purchaseorders_approved_by` (`approved_by`),
+  CONSTRAINT `purchaseorders_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE CASCADE,
+  CONSTRAINT `purchaseorders_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL,
+  CONSTRAINT `purchaseorders_ibfk_3` FOREIGN KEY (`approved_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.returnrequests definition
+
+CREATE TABLE `returnrequests` (
+  `return_id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `requested_at` datetime DEFAULT current_timestamp(),
+  `status` varchar(50) DEFAULT 'Pending',
+  `reason` text DEFAULT NULL,
+  `processed_at` datetime DEFAULT NULL,
+  `processed_by` int(11) DEFAULT NULL,
+  `items` longtext DEFAULT NULL COMMENT 'Mảng JSON chứa các items cần trả',
+  PRIMARY KEY (`return_id`),
+  KEY `processed_by` (`processed_by`),
+  KEY `idx_returns_order` (`order_id`),
+  KEY `idx_returns_user` (`user_id`),
+  CONSTRAINT `returnrequests_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+  CONSTRAINT `returnrequests_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+  CONSTRAINT `returnrequests_ibfk_3` FOREIGN KEY (`processed_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.reviews definition
+
+CREATE TABLE `reviews` (
+  `review_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL COMMENT 'Tham chiếu đến products.id (unified)',
+  `rating` tinyint(4) NOT NULL DEFAULT 5,
+  `comment` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`review_id`),
+  UNIQUE KEY `user_product` (`user_id`,`product_id`),
+  KEY `idx_reviews_user` (`user_id`),
+  KEY `idx_reviews_product` (`product_id`),
+  CONSTRAINT `reviews_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+  CONSTRAINT `reviews_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.shipments definition
+
+CREATE TABLE `shipments` (
+  `shipment_id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_id` int(11) NOT NULL,
+  `shipper_id` int(11) DEFAULT NULL,
+  `shipped_date` datetime DEFAULT NULL,
+  `delivered_date` datetime DEFAULT NULL,
+  `tracking_number` varchar(150) DEFAULT NULL,
+  `shipment_status` varchar(50) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`shipment_id`),
+  KEY `shipper_id` (`shipper_id`),
+  KEY `idx_shipments_order` (`order_id`),
+  CONSTRAINT `shipments_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+  CONSTRAINT `shipments_ibfk_2` FOREIGN KEY (`shipper_id`) REFERENCES `shippers` (`shipper_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.bank_transactions definition
+
+CREATE TABLE `bank_transactions` (
+  `txn_id` int(11) NOT NULL AUTO_INCREMENT,
+  `account_id` int(11) NOT NULL,
+  `external_txn_id` varchar(255) DEFAULT NULL COMMENT 'ID từ hệ thống ngân hàng bên ngoài / gateway (NULL cho internal)',
+  `txn_type` enum('credit','debit','transfer','fee','refund','interest','adjustment','deposit','withdrawal') NOT NULL,
+  `amount` decimal(18,2) NOT NULL,
+  `currency` varchar(10) NOT NULL DEFAULT 'VND',
+  `description` text DEFAULT NULL,
+  `status` enum('pending','posted','reconciled','failed','cancelled') NOT NULL DEFAULT 'pending',
+  `balance_before` decimal(18,2) DEFAULT NULL COMMENT 'Số dư trước giao dịch',
+  `balance_after` decimal(18,2) DEFAULT NULL COMMENT 'Số dư sau giao dịch',
+  `related_order_id` int(11) DEFAULT NULL,
+  `related_payment_id` int(11) DEFAULT NULL,
+  `related_account_id` int(11) DEFAULT NULL COMMENT 'Tài khoản liên quan (cho transfer)',
+  `metadata` longtext DEFAULT NULL COMMENT 'Raw JSON hoặc thông tin mở rộng',
+  `posted_at` datetime DEFAULT NULL,
+  `imported_at` datetime DEFAULT current_timestamp(),
+  `created_by` int(11) DEFAULT NULL,
+  PRIMARY KEY (`txn_id`),
+  UNIQUE KEY `uk_external_txn` (`external_txn_id`(191)),
+  KEY `idx_bank_txn_account` (`account_id`),
+  KEY `idx_bank_txn_status` (`status`),
+  KEY `idx_bank_txn_posted` (`posted_at`),
+  KEY `idx_bank_txn_type` (`txn_type`),
+  KEY `idx_bank_txn_order` (`related_order_id`),
+  KEY `idx_bank_txn_payment` (`related_payment_id`),
+  KEY `idx_bank_txn_related_account` (`related_account_id`),
+  KEY `idx_bank_txn_created` (`imported_at`),
+  KEY `bank_transactions_fk_user` (`created_by`),
+  CONSTRAINT `bank_transactions_fk_account` FOREIGN KEY (`account_id`) REFERENCES `bank_accounts` (`account_id`) ON DELETE CASCADE,
+  CONSTRAINT `bank_transactions_fk_order` FOREIGN KEY (`related_order_id`) REFERENCES `orders` (`order_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_transactions_fk_payment` FOREIGN KEY (`related_payment_id`) REFERENCES `payments` (`payment_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_transactions_fk_related_account` FOREIGN KEY (`related_account_id`) REFERENCES `bank_accounts` (`account_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_transactions_fk_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.orderitems definition
+
+CREATE TABLE `orderitems` (
+  `order_item_id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL COMMENT 'Tham chiếu đến products.id (unified)',
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `unit_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `total_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `product_snapshot` longtext DEFAULT NULL,
+  `unit_price_snapshot` decimal(12,2) DEFAULT NULL,
+  `total_price_snapshot` decimal(12,2) DEFAULT NULL,
+  PRIMARY KEY (`order_item_id`),
+  KEY `idx_orderitems_order` (`order_id`),
+  KEY `idx_orderitems_product` (`product_id`),
+  CONSTRAINT `orderitems_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+  CONSTRAINT `orderitems_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.bank_reconciliations definition
+
+CREATE TABLE `bank_reconciliations` (
+  `reconciliation_id` int(11) NOT NULL AUTO_INCREMENT,
+  `bank_txn_id` int(11) NOT NULL,
+  `order_id` int(11) DEFAULT NULL,
+  `payment_id` int(11) DEFAULT NULL,
+  `matched_by` int(11) DEFAULT NULL,
+  `matched_at` datetime DEFAULT current_timestamp(),
+  `match_score` decimal(5,2) DEFAULT NULL COMMENT '0-100 điểm đánh giá tự động',
+  `notes` text DEFAULT NULL,
+  PRIMARY KEY (`reconciliation_id`),
+  UNIQUE KEY `uk_banktxn_recon` (`bank_txn_id`),
+  KEY `idx_recon_order` (`order_id`),
+  KEY `idx_recon_payment` (`payment_id`),
+  KEY `bank_recon_fk_user` (`matched_by`),
+  CONSTRAINT `bank_recon_fk_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_recon_fk_payment` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`payment_id`) ON DELETE SET NULL,
+  CONSTRAINT `bank_recon_fk_txn` FOREIGN KEY (`bank_txn_id`) REFERENCES `bank_transactions` (`txn_id`) ON DELETE CASCADE,
+  CONSTRAINT `bank_recon_fk_user` FOREIGN KEY (`matched_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- website_coco.v_bank_balance_summary source
+
+create or replace
+algorithm = UNDEFINED view `website_coco`.`v_bank_balance_summary` as
+select
+    `website_coco`.`bank_accounts`.`currency` as `currency`,
+    `website_coco`.`bank_accounts`.`account_type` as `account_type`,
+    count(0) as `account_count`,
+    sum(`website_coco`.`bank_accounts`.`balance`) as `total_balance`,
+    sum(`website_coco`.`bank_accounts`.`available_balance`) as `total_available_balance`,
+    sum(`website_coco`.`bank_accounts`.`pending_balance`) as `total_pending_balance`
+from
+    `website_coco`.`bank_accounts`
+where
+    `website_coco`.`bank_accounts`.`status` = 'active'
+    and `website_coco`.`bank_accounts`.`is_internal` = 1
+group by
+    `website_coco`.`bank_accounts`.`currency`,
+    `website_coco`.`bank_accounts`.`account_type`;
+
+
+-- website_coco.v_bank_transactions_daily source
+
+create or replace
+algorithm = UNDEFINED view `website_coco`.`v_bank_transactions_daily` as
+select
+    cast(`website_coco`.`bank_transactions`.`posted_at` as date) as `transaction_date`,
+    `website_coco`.`bank_transactions`.`account_id` as `account_id`,
+    `website_coco`.`bank_transactions`.`txn_type` as `txn_type`,
+    `website_coco`.`bank_transactions`.`currency` as `currency`,
+    count(0) as `transaction_count`,
+    sum(case when `website_coco`.`bank_transactions`.`txn_type` in ('credit', 'refund', 'interest', 'deposit') then `website_coco`.`bank_transactions`.`amount` else 0 end) as `total_credit`,
+    sum(case when `website_coco`.`bank_transactions`.`txn_type` in ('debit', 'fee', 'withdrawal') then `website_coco`.`bank_transactions`.`amount` else 0 end) as `total_debit`,
+    sum(case when `website_coco`.`bank_transactions`.`txn_type` = 'transfer' then `website_coco`.`bank_transactions`.`amount` else 0 end) as `total_transfer`
+from
+    `website_coco`.`bank_transactions`
+where
+    `website_coco`.`bank_transactions`.`status` = 'posted'
+    and `website_coco`.`bank_transactions`.`posted_at` is not null
+group by
+    cast(`website_coco`.`bank_transactions`.`posted_at` as date),
+    `website_coco`.`bank_transactions`.`account_id`,
+    `website_coco`.`bank_transactions`.`txn_type`,
+    `website_coco`.`bank_transactions`.`currency`;
