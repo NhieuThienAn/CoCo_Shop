@@ -88,8 +88,7 @@ const Wishlist = () => {
     try {
       await cart.addToCart(parseInt(productId), 1);
       message.success('Đã thêm vào giỏ hàng');
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      // CartContext will automatically dispatch cartUpdated event with detail
     } catch (error) {
       console.error('Error adding to cart:', error);
       const errorMessage = error.message || 'Có lỗi xảy ra khi thêm vào giỏ hàng';

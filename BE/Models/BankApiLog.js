@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createBankApiLogModel = () => {
   const baseModel = createBaseModel({
     tableName: 'bank_api_logs',
@@ -17,7 +16,6 @@ const createBankApiLogModel = () => {
       'created_at',
     ],
   });
-
   const findByBankId = async (bankId, options = {}) => {
     const { limit, offset, orderBy = 'created_at DESC' } = options;
     return baseModel.findAll({
@@ -27,7 +25,6 @@ const createBankApiLogModel = () => {
       orderBy,
     });
   };
-
   const findByAccountId = async (accountId, options = {}) => {
     const { limit, offset, orderBy = 'created_at DESC' } = options;
     return baseModel.findAll({
@@ -37,12 +34,10 @@ const createBankApiLogModel = () => {
       orderBy,
     });
   };
-
   return {
     ...baseModel,
     findByBankId,
     findByAccountId,
   };
 };
-
 module.exports = createBankApiLogModel;

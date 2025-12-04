@@ -20,7 +20,6 @@ import {
 } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
 import { product, category, support } from '../../api/index.js';
-import { numberFormatter, numberParser, integerFormatter, integerParser } from '../../utils/numberFormatter.js';
 
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -955,8 +954,7 @@ const AdminProductForm = () => {
                       min={0}
                       style={{ width: '100%' }}
                       placeholder="Nhập giá bán (VD: 2500000)"
-                      formatter={numberFormatter}
-                      parser={numberParser}
+                      controls={false}
                     />
                   </Form.Item>
                 </Col>
@@ -970,8 +968,7 @@ const AdminProductForm = () => {
                       min={0}
                       style={{ width: '100%' }}
                       placeholder="Nhập giá niêm yết (VD: 3000000)"
-                      formatter={numberFormatter}
-                      parser={numberParser}
+                      controls={false}
                     />
                   </Form.Item>
                 </Col>
@@ -985,9 +982,8 @@ const AdminProductForm = () => {
                     <InputNumber 
                       min={0} 
                       style={{ width: '100%' }} 
-                      placeholder="Nhập số lượng (VD: 50, 100, 200)" 
-                      formatter={integerFormatter}
-                      parser={integerParser}
+                      placeholder="Nhập số lượng (VD: 50, 100, 200)"
+                      controls={false}
                     />
                   </Form.Item>
                 </Col>
@@ -1078,9 +1074,8 @@ const AdminProductForm = () => {
                     <InputNumber 
                       min={0} 
                       style={{ width: '100%' }} 
-                      placeholder="Nhập dung tích (VD: 50ml, 100ml, 200ml, 500ml)" 
-                      formatter={integerFormatter}
-                      parser={integerParser}
+                      placeholder="Nhập dung tích (VD: 50ml, 100ml, 200ml, 500ml)"
+                      controls={false}
                     />
                   </Form.Item>
                 </Col>

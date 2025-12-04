@@ -234,6 +234,57 @@ export const verifyOTP = async (email, otp, purpose = 'email_verification') => {
   };
 };
 
+/**
+ * Forgot Password - Send OTP
+ * POST /api/auth/forgot-password
+ */
+export const forgotPassword = async (email) => {
+  const response = await apiCall('/auth/forgot-password', {
+    method: 'POST',
+    body: { email },
+  });
+
+  return {
+    success: response.success || false,
+    message: response.message || 'Có lỗi xảy ra khi gửi mã OTP',
+    email: response.email,
+  };
+};
+
+/**
+ * Verify Forgot Password OTP
+ * POST /api/auth/verify-forgot-password-otp
+ */
+export const verifyForgotPasswordOTP = async (email, otp) => {
+  const response = await apiCall('/auth/verify-forgot-password-otp', {
+    method: 'POST',
+    body: { email, otp },
+  });
+
+  return {
+    success: response.success || false,
+    message: response.message || 'Có lỗi xảy ra khi xác thực OTP',
+    data: response.data,
+  };
+};
+
+/**
+ * Reset Password
+ * POST /api/auth/reset-password
+ */
+export const resetPassword = async (email, otp, newPassword) => {
+  const response = await apiCall('/auth/reset-password', {
+    method: 'POST',
+    body: { email, otp, newPassword },
+  });
+
+  return {
+    success: response.success || false,
+    message: response.message || 'Có lỗi xảy ra khi đặt lại mật khẩu',
+    errors: response.errors,
+  };
+};
+
 export default {
   login,
   register,
@@ -241,6 +292,9 @@ export default {
   logout,
   sendOTP,
   verifyOTP,
+  forgotPassword,
+  verifyForgotPasswordOTP,
+  resetPassword,
   checkToken,
   addTokenToBlacklist,
   cleanupExpiredTokens,

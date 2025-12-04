@@ -18,6 +18,7 @@ import {
   Divider,
   Table,
   Pagination,
+  Tabs,
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -40,9 +41,12 @@ const Orders = () => {
   const location = useLocation();
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
+  const [allOrders, setAllOrders] = useState([]); // Store all orders for filtering
   const [orderDetail, setOrderDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
+  const [addressData, setAddressData] = useState(null); // Store vn-addresses.json data
+  const [activeStatusId, setActiveStatusId] = useState(null); // null = all orders
   // Use sessionStorage to track reload across page reloads (persists until tab closes)
   const getReloadKey = (orderId) => `momo_reload_${orderId}`;
   const hasReloaded = (orderId) => {
@@ -62,23 +66,100 @@ const Orders = () => {
       return;
     }
     
+    // Load address data for province/city name conversion
+    loadAddressData();
+    
     if (id) {
       loadOrderDetail();
     } else {
       loadOrders();
     }
-  }, [id, user, pagination.page, location.search]);
+  }, [id, user, location.search]);
+
+  // Filter orders when activeStatusId or allOrders changes and apply pagination
+  useEffect(() => {
+    if (id) return; // Don't filter if viewing order detail
+    
+    let filteredOrders = allOrders;
+    if (activeStatusId !== null && allOrders.length > 0) {
+      filteredOrders = allOrders.filter(item => {
+        const statusId = item.order_status_id || item.status_id;
+        return statusId === activeStatusId;
+      });
+    }
+    
+    // Apply pagination to filtered orders
+    const startIndex = (pagination.page - 1) * pagination.limit;
+    const endIndex = startIndex + pagination.limit;
+    const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+    
+    setOrders(paginatedOrders);
+    setPagination((prev) => ({
+      ...prev,
+      total: filteredOrders.length,
+    }));
+  }, [activeStatusId, allOrders, pagination.page, pagination.limit, id]);
+
+  // Load Vietnamese address data for converting codes to names
+  const loadAddressData = async () => {
+    try {
+      const response = await fetch('/assets/vn-addresses.json');
+      if (response.ok) {
+        const data = await response.json();
+        setAddressData(data);
+      }
+    } catch (error) {
+      console.error('[Orders] Error loading address data:', error);
+    }
+  };
+
+  // Convert province/city/ward code to name
+  const getAddressName = (code, type = 'province') => {
+    if (!code || !addressData) return code;
+    
+    try {
+      if (type === 'province') {
+        const province = addressData.find(p => p.Code === code);
+        return province ? province.FullName : code;
+      } else if (type === 'ward') {
+        // Find ward across all provinces
+        for (const province of addressData) {
+          if (province.Wards) {
+            const ward = province.Wards.find(w => w.Code === code);
+            if (ward) {
+              return ward.FullName;
+            }
+          }
+        }
+        return code;
+      } else if (type === 'city') {
+        // City might be the same as province code, or a separate code
+        // Try to find as province first
+        const province = addressData.find(p => p.Code === code);
+        if (province) {
+          return province.FullName;
+        }
+        // If not found, return as-is (might be a city name already)
+        return code;
+      }
+    } catch (error) {
+      console.error('[Orders] Error converting address code:', error);
+    }
+    
+    return code;
+  };
 
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const response = await order.getMyOrders(pagination.page, pagination.limit);
+      // Load all orders with a high limit for filtering on client side
+      const response = await order.getMyOrders(1, 1000);
       
       if (response.success) {
         const ordersData = response.data || [];
         
-        // Set orders first to show them immediately
-        setOrders(ordersData);
+        // Store all orders for filtering
+        setAllOrders(ordersData);
         
         // Auto-query MoMo payment status for Pending MoMo payments
         // This handles the case when user returns from MoMo payment before IPN callback completes
@@ -121,11 +202,10 @@ const Orders = () => {
               if (hasStatusUpdate) {
                 // Add a small delay to ensure database transaction has committed
                 setTimeout(() => {
-                  order.getMyOrders(pagination.page, pagination.limit).then(refreshResponse => {
+                  order.getMyOrders(1, 1000).then(refreshResponse => {
                     if (refreshResponse.success && refreshResponse.data) {
-                      setOrders(refreshResponse.data);
+                      setAllOrders(refreshResponse.data);
                       message.success('Trạng thái thanh toán đã được cập nhật');
-                      
                     }
                   }).catch(() => {
                     // Silently fail - user can manually refresh
@@ -137,10 +217,7 @@ const Orders = () => {
               });
           }, 500); // Small delay to allow IPN callback to complete
         }
-        setPagination((prev) => ({
-          ...prev,
-          total: response.pagination?.total || ordersData.length || 0,
-        }));
+        // Pagination will be updated in useEffect after filtering
       } else {
         message.error(response.message || 'Có lỗi xảy ra khi tải đơn hàng');
       }
@@ -322,6 +399,7 @@ const Orders = () => {
       if (id) {
         loadOrderDetail();
       } else {
+        // Reload all orders to get updated status
         loadOrders();
       }
     } catch (error) {
@@ -760,38 +838,84 @@ const Orders = () => {
                 </Descriptions>
               </Card>
 
-              <Card title="Địa Chỉ Giao Hàng" className="order-detail-card" style={{ marginTop: '24px' }}>
+              <Card 
+                title={
+                  <Space>
+                    <HomeOutlined />
+                    <span>Địa Chỉ Giao Hàng</span>
+                  </Space>
+                } 
+                className="order-detail-card" 
+                style={{ marginTop: '24px' }}
+              >
                 {orderDetail.shipping_address ? (
-                  <Descriptions column={1} size="small">
+                  <Descriptions column={1} size="small" bordered>
                     <Descriptions.Item label="Người nhận">
-                      <Text strong>{orderDetail.shipping_address.full_name}</Text>
+                      <Text strong>{orderDetail.shipping_address.full_name || 'N/A'}</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Điện thoại">
+                      {orderDetail.shipping_address.phone || 'N/A'}
                     </Descriptions.Item>
                     <Descriptions.Item label="Địa chỉ">
-                      {orderDetail.shipping_address.address_line1}
-                      {orderDetail.shipping_address.address_line2 && (
-                        <>, {orderDetail.shipping_address.address_line2}</>
-                      )}
+                      <div>
+                        {orderDetail.shipping_address.address_line1 || ''}
+                        {orderDetail.shipping_address.address_line2 && (
+                          <div style={{ marginTop: '4px', color: '#666' }}>
+                            {orderDetail.shipping_address.address_line2}
+                          </div>
+                        )}
+                      </div>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Thành phố">
-                      {[
-                        orderDetail.shipping_address.ward,
-                        orderDetail.shipping_address.district,
-                        orderDetail.shipping_address.city,
-                        orderDetail.shipping_address.province,
-                      ].filter(Boolean).join(', ')}
-                      {orderDetail.shipping_address.postal_code && ` - ${orderDetail.shipping_address.postal_code}`}
+                    <Descriptions.Item label="Thành phố/Tỉnh">
+                      {(() => {
+                        const addressParts = [];
+                        
+                        // Ward (Phường/Xã)
+                        if (orderDetail.shipping_address.ward) {
+                          const wardName = getAddressName(orderDetail.shipping_address.ward, 'ward');
+                          addressParts.push(wardName);
+                        }
+                        
+                        // District (Quận/Huyện)
+                        if (orderDetail.shipping_address.district) {
+                          addressParts.push(orderDetail.shipping_address.district);
+                        }
+                        
+                        // City (Thành phố)
+                        if (orderDetail.shipping_address.city) {
+                          const cityName = getAddressName(orderDetail.shipping_address.city, 'city');
+                          addressParts.push(cityName);
+                        }
+                        
+                        // Province (Tỉnh) - only add if different from city
+                        if (orderDetail.shipping_address.province) {
+                          const provinceName = getAddressName(orderDetail.shipping_address.province, 'province');
+                          // Only add province if it's different from city
+                          if (!orderDetail.shipping_address.city || provinceName !== getAddressName(orderDetail.shipping_address.city, 'city')) {
+                            addressParts.push(provinceName);
+                          }
+                        }
+                        
+                        const addressText = addressParts.length > 0 
+                          ? addressParts.join(', ')
+                          : 'N/A';
+                        
+                        return (
+                          <>
+                            {addressText}
+                            {orderDetail.shipping_address.postal_code && ` - ${orderDetail.shipping_address.postal_code}`}
+                          </>
+                        );
+                      })()}
                     </Descriptions.Item>
                     {orderDetail.shipping_address.country && (
                       <Descriptions.Item label="Quốc gia">
                         {orderDetail.shipping_address.country}
                       </Descriptions.Item>
                     )}
-                    <Descriptions.Item label="Điện thoại">
-                      {orderDetail.shipping_address.phone}
-                    </Descriptions.Item>
                   </Descriptions>
                 ) : (
-                  <Empty description="Chưa có địa chỉ" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="Chưa có địa chỉ giao hàng" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 )}
               </Card>
 
@@ -831,6 +955,35 @@ const Orders = () => {
     );
   }
 
+  // Tab items for order status filtering
+  const statusTabs = [
+    { key: 'all', label: 'Tất Cả', statusId: null },
+    { key: '1', label: 'Chờ Xác Nhận', statusId: 1 },
+    { key: '2', label: 'Đã Xác Nhận', statusId: 2 },
+    { key: '3', label: 'Đang Giao', statusId: 3 },
+    { key: '4', label: 'Đã Giao', statusId: 4 },
+    { key: '5', label: 'Đã Hủy', statusId: 5 },
+    { key: '6', label: 'Trả Hàng', statusId: 6 },
+    { key: '8', label: 'Hoàn Thành', statusId: 8 },
+  ];
+
+  const handleTabChange = (key) => {
+    const selectedTab = statusTabs.find(tab => tab.key === key);
+    if (selectedTab) {
+      setActiveStatusId(selectedTab.statusId);
+      // Reset pagination to page 1 when changing tabs
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    }
+  };
+
+  // Get current tab key based on activeStatusId
+  const getCurrentTabKey = () => {
+    const currentTab = statusTabs.find(tab => tab.statusId === activeStatusId);
+    return currentTab ? currentTab.key : 'all';
+  };
+
+  // Orders are already filtered in useEffect, just use them directly
+
   return (
     <div className="orders-page">
       <div className="container">
@@ -838,10 +991,24 @@ const Orders = () => {
           <ShoppingOutlined /> Đơn Hàng Của Tôi
         </Title>
 
+        <Tabs
+          activeKey={getCurrentTabKey()}
+          onChange={handleTabChange}
+          items={statusTabs.map(tab => ({
+            key: tab.key,
+            label: tab.label,
+          }))}
+          style={{ marginBottom: '24px' }}
+        />
+
         {orders.length === 0 ? (
           <Card className="empty-orders-card">
             <Empty
-              description="Bạn chưa có đơn hàng nào"
+              description={
+                activeStatusId === null 
+                  ? "Bạn chưa có đơn hàng nào"
+                  : `Không có đơn hàng ở trạng thái "${statusTabs.find(t => t.statusId === activeStatusId)?.label || ''}"`
+              }
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             >
               <Link to="/products">
@@ -990,7 +1157,9 @@ const Orders = () => {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               showSizeChanger={false}
-              showTotal={(total) => `Tổng ${total} đơn hàng`}
+              showTotal={(total, range) => 
+                `${range[0]}-${range[1]} của ${total} đơn hàng`
+              }
             />
           </div>
         )}

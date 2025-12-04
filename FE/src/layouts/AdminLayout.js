@@ -13,6 +13,7 @@ import {
   MenuUnfoldOutlined,
   BankOutlined,
   LineChartOutlined,
+  ShopOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext.js';
 import './AdminLayout.scss';
@@ -68,6 +69,11 @@ const AdminLayout = () => {
       key: '/admin/orders',
       icon: React.createElement(ShoppingCartOutlined),
       label: 'Đơn Hàng',
+    },
+    {
+      key: '/admin/carts',
+      icon: React.createElement(ShopOutlined),
+      label: 'Giỏ Hàng',
     },
     {
       key: '/admin/users',

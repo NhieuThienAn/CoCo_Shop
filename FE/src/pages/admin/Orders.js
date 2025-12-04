@@ -34,6 +34,7 @@ import {
   FileTextOutlined,
   EditOutlined,
   InfoCircleOutlined,
+  ClearOutlined,
 } from '@ant-design/icons';
 import { order, payment } from '../../api/index.js';
 import { getAddressById } from '../../api/address.js';
@@ -45,15 +46,18 @@ const AdminOrders = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
   const [filters, setFilters] = useState({
     statusId: '',
     searchText: '',
+    paymentMethod: '',
+    paymentStatus: '',
   });
 
   useEffect(() => {
     loadOrders();
-  }, [pagination.page, pagination.limit, filters.statusId]);
+  }, [pagination.page, pagination.limit, filters.statusId, filters.paymentMethod, filters.paymentStatus]);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -82,6 +86,31 @@ const AdminOrders = () => {
             o.user?.email?.toLowerCase().includes(searchLower)
           );
         }
+
+        // Filter by payment method
+        if (filters.paymentMethod) {
+          ordersData = ordersData.filter(o => {
+            const payment = o.payment || o.payments?.[0];
+            if (!payment) return filters.paymentMethod === 'none';
+            const gateway = payment.gateway?.toUpperCase();
+            if (filters.paymentMethod === 'COD') return gateway === 'COD';
+            if (filters.paymentMethod === 'MOMO') return gateway === 'MOMO';
+            return false;
+          });
+        }
+
+        // Filter by payment status
+        if (filters.paymentStatus) {
+          ordersData = ordersData.filter(o => {
+            const payment = o.payment || o.payments?.[0];
+            if (!payment) return filters.paymentStatus === 'none';
+            const statusId = parseInt(payment.payment_status_id);
+            if (filters.paymentStatus === 'paid') return statusId === 2;
+            if (filters.paymentStatus === 'pending') return statusId === 1;
+            return false;
+          });
+        }
+
         
         // Enrich orders with payment and address data if not already included
         // Backend getAll does not enrich payment data, so we fetch it here
@@ -171,6 +200,13 @@ const AdminOrders = () => {
   };
 
   const handleStatusChange = async (orderId, action) => {
+    // Prevent multiple clicks on the same order
+    const updateKey = `${orderId}-${action}`;
+    if (updating[updateKey]) {
+      return;
+    }
+
+    setUpdating((prev) => ({ ...prev, [updateKey]: true }));
     try {
       let response;
       switch (action) {
@@ -178,6 +214,8 @@ const AdminOrders = () => {
           response = await order.confirmOrder(orderId);
           if (response.success) {
             message.success('Xác nhận đơn hàng thành công');
+            // Reload immediately to update UI
+            await loadOrders();
           } else {
             message.error(response.message || 'Có lỗi xảy ra khi xác nhận đơn hàng');
             return;
@@ -222,10 +260,19 @@ const AdminOrders = () => {
         default:
           break;
       }
-      loadOrders();
+      // Only reload if not already reloaded in specific case
+      if (action !== 'confirm') {
+        await loadOrders();
+      }
     } catch (error) {
       console.error('Error updating order:', error);
       message.error(error.message || 'Có lỗi xảy ra khi cập nhật đơn hàng');
+    } finally {
+      setUpdating((prev) => {
+        const newState = { ...prev };
+        delete newState[updateKey];
+        return newState;
+      });
     }
   };
 
@@ -310,43 +357,105 @@ const AdminOrders = () => {
         </Button>
       </div>
 
-      <div style={{ marginBottom: '16px' }}>
-        <Space>
-          <Search
-            placeholder="Tìm kiếm theo mã đơn, tên, email khách hàng..."
-            allowClear
-            enterButton={<SearchOutlined />}
-            style={{ width: 400 }}
-            onSearch={(value) => {
-              setFilters((prev) => ({ ...prev, searchText: value }));
-              setPagination((prev) => ({ ...prev, page: 1 }));
-            }}
-            onChange={(e) => {
-              if (!e.target.value) {
-                setFilters((prev) => ({ ...prev, searchText: '' }));
+      <Card 
+        style={{ marginBottom: '16px' }}
+        styles={{ body: { padding: '16px' } }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          {/* Quick filters row */}
+          <Space wrap style={{ width: '100%' }}>
+            <Search
+              placeholder="Tìm kiếm theo mã đơn, tên, email khách hàng..."
+              allowClear
+              enterButton={<SearchOutlined />}
+              style={{ width: 300 }}
+              value={filters.searchText}
+              onSearch={(value) => {
+                setFilters((prev) => ({ ...prev, searchText: value }));
                 setPagination((prev) => ({ ...prev, page: 1 }));
-              }
-            }}
-          />
-          <Select
-            placeholder="Lọc theo trạng thái"
-            style={{ width: 180 }}
-            allowClear
-            value={filters.statusId || undefined}
-            onChange={(value) => {
-              setFilters((prev) => ({ ...prev, statusId: value || '' }));
-              setPagination((prev) => ({ ...prev, page: 1 }));
-            }}
-          >
-            <Select.Option value="1">Chờ Xác Nhận</Select.Option>
-            <Select.Option value="2">Đã Xác Nhận</Select.Option>
-            <Select.Option value="3">Đang Giao</Select.Option>
-            <Select.Option value="4">Đã Giao</Select.Option>
-            <Select.Option value="5">Đã Hủy</Select.Option>
-            <Select.Option value="6">Trả Hàng</Select.Option>
-          </Select>
+              }}
+              onChange={(e) => {
+                if (!e.target.value) {
+                  setFilters((prev) => ({ ...prev, searchText: '' }));
+                  setPagination((prev) => ({ ...prev, page: 1 }));
+                }
+              }}
+            />
+            <Select
+              placeholder="Trạng thái đơn hàng"
+              style={{ width: 160 }}
+              allowClear
+              value={filters.statusId || undefined}
+              onChange={(value) => {
+                setFilters((prev) => ({ ...prev, statusId: value || '' }));
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
+            >
+              <Select.Option value="1">Chờ Xác Nhận</Select.Option>
+              <Select.Option value="2">Đã Xác Nhận</Select.Option>
+              <Select.Option value="3">Đang Giao</Select.Option>
+              <Select.Option value="4">Đã Giao</Select.Option>
+              <Select.Option value="5">Đã Hủy</Select.Option>
+              <Select.Option value="6">Trả Hàng</Select.Option>
+              <Select.Option value="8">Hoàn Thành</Select.Option>
+            </Select>
+            <Select
+              placeholder="Phương thức thanh toán"
+              style={{ width: 180 }}
+              allowClear
+              value={filters.paymentMethod || undefined}
+              onChange={(value) => {
+                setFilters((prev) => ({ ...prev, paymentMethod: value || '' }));
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
+            >
+              <Select.Option value="COD">COD</Select.Option>
+              <Select.Option value="MOMO">MoMo</Select.Option>
+              <Select.Option value="none">Chưa có thanh toán</Select.Option>
+            </Select>
+            <Select
+              placeholder="Trạng thái thanh toán"
+              style={{ width: 180 }}
+              allowClear
+              value={filters.paymentStatus || undefined}
+              onChange={(value) => {
+                setFilters((prev) => ({ ...prev, paymentStatus: value || '' }));
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
+            >
+              <Select.Option value="paid">Đã Thanh Toán</Select.Option>
+              <Select.Option value="pending">Chờ Thanh Toán</Select.Option>
+              <Select.Option value="none">Chưa có thanh toán</Select.Option>
+            </Select>
+            <Button
+              icon={<ClearOutlined />}
+              onClick={() => {
+                setFilters({
+                  statusId: '',
+                  searchText: '',
+                  paymentMethod: '',
+                  paymentStatus: '',
+                  dateRange: null,
+                  singleDate: null,
+                  amountRange: { min: null, max: null },
+                });
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
+            >
+              Xóa Bộ Lọc
+            </Button>
+          </Space>
+
+          {/* Results count */}
+          {orders.length > 0 && (
+            <div style={{ marginTop: '8px' }}>
+              <Text type="secondary">
+                Tìm thấy <Text strong>{orders.length}</Text> đơn hàng
+              </Text>
+            </div>
+          )}
         </Space>
-      </div>
+      </Card>
 
       {orders.length === 0 ? (
         <Empty description="Chưa có đơn hàng nào" />
@@ -389,11 +498,14 @@ const AdminOrders = () => {
                             onConfirm={() => handleStatusChange(orderId, 'confirm')}
                             okText="Xác nhận"
                             cancelText="Hủy"
+                            disabled={updating[`${orderId}-confirm`]}
                           >
                             <Button
                               type="text"
                               icon={<CheckOutlined />}
                               style={{ color: '#1890ff' }}
+                              loading={updating[`${orderId}-confirm`]}
+                              disabled={updating[`${orderId}-confirm`]}
                             >
                               Xác Nhận
                             </Button>
@@ -419,7 +531,7 @@ const AdminOrders = () => {
                         </Tooltip>
                       ),
                       statusId === 3 && (
-                        <Tooltip title="Đánh dấu đã giao" key="delivered">
+                        <Tooltip title="Đánh dấu đã giao hàng" key="delivered">
                           <Popconfirm
                             title="Xác nhận đã giao hàng?"
                             onConfirm={() => handleStatusChange(orderId, 'delivered')}
@@ -431,7 +543,7 @@ const AdminOrders = () => {
                               icon={<CheckCircleOutlined />}
                               style={{ color: '#52c41a' }}
                             >
-                              Hoàn Thành
+                              Đã Giao Hàng
                             </Button>
                           </Popconfirm>
                         </Tooltip>

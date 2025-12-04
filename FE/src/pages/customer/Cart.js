@@ -25,8 +25,8 @@ import {
   ShoppingOutlined,
   ArrowRightOutlined,
 } from '@ant-design/icons';
-import { cart } from '../../api/index.js';
 import { useAuth } from '../../contexts/AuthContext.js';
+import { useCart } from '../../contexts/CartContext.js';
 import './Cart.scss';
 
 const { Title, Text } = Typography;
@@ -34,9 +34,15 @@ const { Title, Text } = Typography;
 const Cart = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [cartItems, setCartItems] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const {
+    cartItems,
+    total,
+    loading,
+    updateCartItem,
+    removeFromCart,
+    clearCart,
+    syncCartWithBackend,
+  } = useCart();
   const [updating, setUpdating] = useState({});
 
   useEffect(() => {
@@ -45,60 +51,29 @@ const Cart = () => {
       navigate('/');
       return;
     }
-    loadCart();
-  }, [user]);
+    // Sync cart with backend on mount để lấy giá mới nhất từ products table
+    // Điều này đảm bảo giá trong giỏ hàng luôn phản ánh giá hiện tại của sản phẩm
+    syncCartWithBackend();
+  }, [user, syncCartWithBackend, navigate]);
+  
+  // Sync lại giỏ hàng khi trang được focus để đảm bảo có giá mới nhất
+  useEffect(() => {
+    if (!user) return;
+    
+    const handleFocus = () => {
+      // Sync lại khi user quay lại tab/window
+      syncCartWithBackend(true); // Silent sync
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user, syncCartWithBackend]);
 
-  const loadCart = async () => {
-    console.log('[Cart] 🔍 Loading cart...');
-    try {
-      const response = await cart.getCart();
-      console.log('[Cart] 📦 Cart API response:', {
-        success: response.success,
-        hasData: !!response.data,
-        itemsCount: response.data?.items?.length || 0,
-      });
-      
-      if (response.success) {
-        const items = response.data.items || [];
-        
-        // Log each item's product data to debug image issue
-        items.forEach((item, index) => {
-          console.log(`[Cart] 📦 Item ${index + 1} from API:`, {
-            cart_item_id: item.cart_item_id,
-            product_id: item.product_id || item.id,
-            hasProduct: !!item.product,
-            productName: item.product?.name,
-            hasPrimaryImage: !!item.product?.primary_image,
-            primaryImage: item.product?.primary_image ? (item.product.primary_image.length > 100 ? item.product.primary_image.substring(0, 100) + '...' : item.product.primary_image) : 'null',
-            hasImages: !!item.product?.images,
-            imagesType: typeof item.product?.images,
-            imagesIsArray: Array.isArray(item.product?.images),
-            imagesLength: Array.isArray(item.product?.images) ? item.product.images.length : 'N/A',
-          });
-        });
-        
-        // Calculate total from items (backend uses unit_price in SUM)
-        const calculatedTotal = items.reduce((sum, item) => {
-          const unitPrice = item.unit_price || 0;
-          const quantity = item.quantity || 0;
-          return sum + (unitPrice * quantity);
-        }, 0);
-        
-        setCartItems(items);
-        // Use server total if available, otherwise use calculated
-        setTotal(response.data.total || calculatedTotal);
-      }
-    } catch (error) {
-      console.error('[Cart] ❌ Error loading cart:', error);
-      message.error('Có lỗi xảy ra khi tải giỏ hàng');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateQuantity = async (productId, newQuantity) => {
+  const handleUpdateQuantity = async (productId, newQuantity) => {
     if (newQuantity <= 0) {
-      await removeItem(productId);
+      await handleRemoveItem(productId);
       return;
     }
     
@@ -111,30 +86,29 @@ const Cart = () => {
     
     setUpdating((prev) => ({ ...prev, [productId]: true }));
     try {
-      await cart.updateCartItem(productId, newQuantity);
-      message.success('Cập nhật số lượng thành công');
-      // Reload cart to get updated data
-      await loadCart();
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      const result = await updateCartItem(productId, newQuantity);
+      if (result.success) {
+        message.success(result.message || 'Cập nhật số lượng thành công');
+      } else {
+        message.error(result.message || 'Có lỗi xảy ra khi cập nhật số lượng');
+      }
     } catch (error) {
       console.error('Error updating cart:', error);
-      const errorMessage = error.message || 'Có lỗi xảy ra khi cập nhật số lượng';
-      message.error(errorMessage);
+      message.error('Có lỗi xảy ra khi cập nhật số lượng');
     } finally {
       setUpdating((prev) => ({ ...prev, [productId]: false }));
     }
   };
 
-  const removeItem = async (productId) => {
+  const handleRemoveItem = async (productId) => {
     setUpdating((prev) => ({ ...prev, [productId]: true }));
     try {
-      await cart.removeFromCart(productId);
-      message.success('Đã xóa sản phẩm khỏi giỏ hàng');
-      // Reload cart to get updated data
-      await loadCart();
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      const result = await removeFromCart(productId);
+      if (result.success) {
+        message.success(result.message || 'Đã xóa sản phẩm khỏi giỏ hàng');
+      } else {
+        message.error(result.message || 'Có lỗi xảy ra');
+      }
     } catch (error) {
       console.error('Error removing item:', error);
       message.error('Có lỗi xảy ra');
@@ -143,14 +117,14 @@ const Cart = () => {
     }
   };
 
-  const clearCart = async () => {
+  const handleClearCart = async () => {
     try {
-      await cart.clearCart();
-      message.success('Đã xóa tất cả sản phẩm');
-      // Reload cart to get updated data
-      await loadCart();
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      const result = await clearCart();
+      if (result.success) {
+        message.success(result.message || 'Đã xóa tất cả sản phẩm');
+      } else {
+        message.error(result.message || 'Có lỗi xảy ra');
+      }
     } catch (error) {
       console.error('Error clearing cart:', error);
       message.error('Có lỗi xảy ra');
@@ -198,7 +172,7 @@ const Cart = () => {
                 extra={
                   <Popconfirm
                     title="Bạn có chắc muốn xóa tất cả sản phẩm?"
-                    onConfirm={clearCart}
+                    onConfirm={handleClearCart}
                     okText="Xóa"
                     cancelText="Hủy"
                   >
@@ -240,12 +214,13 @@ const Cart = () => {
                           imagesKeys: productSnapshot?.images && typeof productSnapshot.images === 'object' ? Object.keys(productSnapshot.images) : null,
                         });
                         
-                        // Merge snapshot with product data (snapshot takes precedence only if it has valid values)
+                        // Merge snapshot with product data
+                        // Lưu ý: Giá luôn lấy từ product.price (giá hiện tại), không dùng snapshot
                         if (productSnapshot) {
                           product = {
                             ...product,
                             name: productSnapshot.name || product.name,
-                            price: productSnapshot.price || product.price,
+                            price: product.price, // Luôn dùng giá hiện tại từ products table
                             // Only override images if snapshot has valid images (not empty object/null)
                             images: (productSnapshot.images && 
                               (Array.isArray(productSnapshot.images) || 
@@ -360,9 +335,9 @@ const Cart = () => {
                       });
                     }
                     
-                    // Use unit_price_snapshot for display (price at time of adding to cart)
-                    // But backend calculates total using unit_price
-                    const unitPrice = item.unit_price_snapshot || item.unit_price || 0;
+                    // Luôn dùng giá hiện tại từ product.price (giá từ products table)
+                    // Giá này sẽ thay đổi khi giá sản phẩm trong hệ thống thay đổi
+                    const unitPrice = product.price || item.unit_price || 0;
                     const quantity = item.quantity || 0;
                     const itemTotal = unitPrice * quantity;
                     const isUpdating = updating[productId];
@@ -415,21 +390,21 @@ const Cart = () => {
                               <Button
                                 icon={<MinusOutlined />}
                                 size="small"
-                                onClick={() => updateQuantity(productId, (item.quantity || 1) - 1)}
+                                onClick={() => handleUpdateQuantity(productId, (item.quantity || 1) - 1)}
                                 disabled={isUpdating || item.quantity <= 1}
                               />
                               <InputNumber
                                 min={1}
                                 max={product.stock_quantity || 999}
                                 value={item.quantity}
-                                onChange={(value) => updateQuantity(productId, value || 1)}
+                                onChange={(value) => handleUpdateQuantity(productId, value || 1)}
                                 disabled={isUpdating}
                                 style={{ width: '70px' }}
                               />
                               <Button
                                 icon={<PlusOutlined />}
                                 size="small"
-                                onClick={() => updateQuantity(productId, (item.quantity || 1) + 1)}
+                                onClick={() => handleUpdateQuantity(productId, (item.quantity || 1) + 1)}
                                 disabled={isUpdating || (product.stock_quantity && item.quantity >= product.stock_quantity)}
                               />
                             </Space>
@@ -444,7 +419,7 @@ const Cart = () => {
                           </div>
                           <Popconfirm
                             title="Bạn có chắc muốn xóa sản phẩm này?"
-                            onConfirm={() => removeItem(productId)}
+                            onConfirm={() => handleRemoveItem(productId)}
                             okText="Xóa"
                             cancelText="Hủy"
                           >

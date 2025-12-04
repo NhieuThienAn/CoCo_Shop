@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createBankTransferRequestModel = () => {
   const baseModel = createBaseModel({
     tableName: 'bank_transfer_requests',
@@ -21,26 +20,21 @@ const createBankTransferRequestModel = () => {
       'metadata',
     ],
   });
-
   const findByAccountFrom = async (accountFromId) => {
     return baseModel.findAll({ filters: { account_from_id: accountFromId }, orderBy: 'initiated_at DESC' });
   };
-
   const findByAccountTo = async (accountToId) => {
     return baseModel.findAll({ filters: { account_to_id: accountToId }, orderBy: 'initiated_at DESC' });
   };
-
   const findByStatus = async (status) => {
     return baseModel.findAll({ filters: { status }, orderBy: 'initiated_at DESC' });
   };
-
   const updateStatus = async (transferId, status, processedAt = null) => {
     return baseModel.update(transferId, {
       status,
       processed_at: processedAt || new Date(),
     });
   };
-
   return {
     ...baseModel,
     findByAccountFrom,
@@ -49,5 +43,4 @@ const createBankTransferRequestModel = () => {
     updateStatus,
   };
 };
-
 module.exports = createBankTransferRequestModel;

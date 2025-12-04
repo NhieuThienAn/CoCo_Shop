@@ -2,24 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { CategoryController } = require('../Controllers');
 const { authenticate, authorize, optionalAuthenticate } = require('../Middlewares');
-
-/**
- * Category Routes
- */
-
-// Public routes - No authentication required
 router.get('/', optionalAuthenticate, CategoryController.getAll);
 router.get('/:id', optionalAuthenticate, CategoryController.getById);
 router.get('/slug/:slug', optionalAuthenticate, CategoryController.getBySlug);
 router.get('/parent/:parentId', optionalAuthenticate, CategoryController.getByParent);
 router.get('/tree/list', optionalAuthenticate, CategoryController.getCategoryTree);
-
-/**
- * Category CRUD Routes - Admin only
- */
 router.post('/', authenticate, authorize(1), CategoryController.create);
 router.put('/:id', authenticate, authorize(1), CategoryController.update);
 router.delete('/:id', authenticate, authorize(1), CategoryController.delete);
-
 module.exports = router;
-

@@ -94,19 +94,30 @@ const ProductCard = ({ product, showActions = true, onWishlistChange }) => {
   // IMPORTANT: Always use product_id, not id
   // product_id is the business identifier, id is the database primary key
   // Backend cart operations use product_id, not id
-  const productId = product.product_id !== undefined && product.product_id !== null 
+  // Check if product_id exists and is a valid number (not 0, undefined, or null)
+  const productId = (product.product_id !== undefined && product.product_id !== null && product.product_id !== 0)
     ? product.product_id 
-    : product.id; // Fallback only if product_id is truly missing
+    : (product.id !== undefined && product.id !== null ? product.id : null);
   
   // Log productId để debug
   useEffect(() => {
-    console.log('[ProductCard] 🔍 ProductCard mounted/updated:', {
-      productId,
-      product_id: product.product_id,
-      id: product.id,
-      name: product.name,
-      hasProduct: !!product
-    });
+    if (productId === null || productId === 0) {
+      console.warn('[ProductCard] ⚠️ Invalid productId:', {
+        productId,
+        product_id: product.product_id,
+        id: product.id,
+        name: product.name,
+        hasProduct: !!product
+      });
+    } else {
+      console.log('[ProductCard] 🔍 ProductCard mounted/updated:', {
+        productId,
+        product_id: product.product_id,
+        id: product.id,
+        name: product.name,
+        hasProduct: !!product
+      });
+    }
   }, [productId, product.product_id, product.id, product.name]);
 
   // Memoize image parsing
@@ -156,17 +167,35 @@ const ProductCard = ({ product, showActions = true, onWishlistChange }) => {
 
     setLoadingCart(true);
     try {
-      const finalProductId = parseInt(productId);
-      if (isNaN(finalProductId)) {
-        console.error('[ProductCard] ❌ Invalid productId in handleAddToCart:', productId);
+      // Ensure we have a valid productId
+      let finalProductId;
+      if (product.product_id !== undefined && product.product_id !== null && product.product_id !== 0) {
+        finalProductId = parseInt(product.product_id);
+      } else if (product.id !== undefined && product.id !== null) {
+        finalProductId = parseInt(product.id);
+      } else {
+        console.error('[ProductCard] ❌ No valid productId or id found:', product);
         message.error('Lỗi: Không thể xác định sản phẩm');
+        setLoadingCart(false);
         return;
       }
       
+      if (isNaN(finalProductId) || finalProductId <= 0) {
+        console.error('[ProductCard] ❌ Invalid productId in handleAddToCart:', {
+          finalProductId,
+          product_id: product.product_id,
+          id: product.id,
+          product
+        });
+        message.error('Lỗi: Không thể xác định sản phẩm');
+        setLoadingCart(false);
+        return;
+      }
+      
+      console.log('[ProductCard] ➕ Adding to cart:', { productId: finalProductId, productName: product.name });
       await cart.addToCart(finalProductId, 1);
       message.success('Đã thêm vào giỏ hàng');
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      // CartContext will automatically dispatch cartUpdated event with detail
     } catch (error) {
       console.error('[ProductCard] ❌ Error adding to cart:', error);
       message.error(error.message || 'Có lỗi xảy ra khi thêm vào giỏ hàng');
@@ -328,8 +357,7 @@ const ProductCard = ({ product, showActions = true, onWishlistChange }) => {
         });
       }
       
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      // CartContext will automatically dispatch cartUpdated event with detail
       // Navigate to checkout
       navigate('/checkout');
     } catch (error) {

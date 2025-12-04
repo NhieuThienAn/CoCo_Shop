@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createInventoryTransactionModel = () => {
   const baseModel = createBaseModel({
     tableName: 'inventorytransactions',
@@ -14,7 +13,6 @@ const createInventoryTransactionModel = () => {
       'created_by',
     ],
   });
-
   const findByProductId = async (productId, options = {}) => {
     const { limit, offset, orderBy = 'changed_at DESC' } = options;
     return baseModel.findAll({
@@ -24,7 +22,6 @@ const createInventoryTransactionModel = () => {
       orderBy,
     });
   };
-
   const findByChangeType = async (changeType, options = {}) => {
     const { limit, offset, orderBy = 'changed_at DESC' } = options;
     return baseModel.findAll({
@@ -34,7 +31,6 @@ const createInventoryTransactionModel = () => {
       orderBy,
     });
   };
-
   const recordTransaction = async (productId, quantityChange, changeType, note = null, createdBy = null) => {
     return baseModel.create({
       product_id: productId,
@@ -45,17 +41,10 @@ const createInventoryTransactionModel = () => {
       changed_at: new Date(),
     });
   };
-
-  /**
-   * Batch record multiple inventory transactions using SQL INSERT with multiple VALUES (single SQL query)
-   * Input: Array of { product_id, quantity_change, change_type, note, created_by }
-   * This replaces multiple individual INSERT queries in loops
-   */
   const batchRecordTransactions = async (transactions) => {
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return;
     }
-
     const now = new Date();
     const values = transactions.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
     const params = transactions.flatMap(t => [
@@ -66,16 +55,13 @@ const createInventoryTransactionModel = () => {
       t.created_by || null,
       now
     ]);
-
     const sql = `
       INSERT INTO \`${baseModel.tableName}\` 
       (\`product_id\`, \`quantity_change\`, \`change_type\`, \`note\`, \`created_by\`, \`changed_at\`)
       VALUES ${values}
     `;
-
     return await baseModel.execute(sql, params);
   };
-
   return {
     ...baseModel,
     findByProductId,
@@ -84,5 +70,4 @@ const createInventoryTransactionModel = () => {
     batchRecordTransactions,
   };
 };
-
 module.exports = createInventoryTransactionModel;

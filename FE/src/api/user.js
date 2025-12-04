@@ -125,6 +125,15 @@ export const resetFailedAttempts = (id) =>
     method: 'PUT',
   });
 
+/**
+ * Restore user (Admin only)
+ * POST /api/users/:id/restore
+ */
+export const restoreUser = (id) =>
+  apiCall(`/users/${id}/restore`, {
+    method: 'POST',
+  });
+
 export default {
   getCurrentUser,
   updateCurrentUser,
@@ -140,5 +149,6 @@ export default {
   updateUserLastLogin,
   incrementFailedAttempts,
   resetFailedAttempts,
+  restoreUser,
 };
 

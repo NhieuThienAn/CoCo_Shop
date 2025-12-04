@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createTokenBlacklistModel = () => {
   const baseModel = createBaseModel({
     tableName: 'tokenblacklist',
@@ -12,13 +11,11 @@ const createTokenBlacklistModel = () => {
       'blacklisted_at',
     ],
   });
-
   const isTokenBlacklisted = async (token) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`token\` = ? LIMIT 1`;
     const rows = await baseModel.execute(sql, [token]);
     return Array.isArray(rows) ? rows.length > 0 : false;
   };
-
   const addToBlacklist = async (token, tokenType = 'access', expiresAt = null) => {
     return await baseModel.create({
       token,
@@ -26,12 +23,10 @@ const createTokenBlacklistModel = () => {
       expires_at: expiresAt,
     });
   };
-
   const cleanupExpiredTokens = async () => {
     const sql = `DELETE FROM \`${baseModel.tableName}\` WHERE \`expires_at\` IS NOT NULL AND \`expires_at\` < NOW()`;
     return await baseModel.execute(sql);
   };
-
   return {
     ...baseModel,
     isTokenBlacklisted,
@@ -39,5 +34,4 @@ const createTokenBlacklistModel = () => {
     cleanupExpiredTokens,
   };
 };
-
 module.exports = createTokenBlacklistModel;

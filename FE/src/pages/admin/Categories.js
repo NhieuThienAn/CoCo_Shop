@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Table,
+  Card,
+  Row,
+  Col,
   Button,
   Modal,
   Form,
@@ -11,8 +13,11 @@ import {
   Popconfirm,
   message,
   Typography,
+  Tag,
+  Empty,
+  Spin,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined, FolderOutlined } from '@ant-design/icons';
 import { category } from '../../api/index.js';
 
 const { Title } = Typography;
@@ -70,6 +75,7 @@ const AdminCategories = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [form] = Form.useForm();
+  const slugValue = Form.useWatch('slug', form);
 
   useEffect(() => {
     loadCategories();
@@ -135,8 +141,13 @@ const AdminCategories = () => {
       return;
     }
     const slug = generateSlug(name);
+    // Set slug value to form and force update
     form.setFieldsValue({ slug });
-    message.success('Đã tạo slug tự động');
+    // Force form to update and display the slug value
+    setTimeout(() => {
+      form.validateFields(['slug']).catch(() => {});
+    }, 0);
+    message.success(`Đã tạo slug tự động: ${slug}`);
   };
 
   const handleDelete = async (id) => {
@@ -166,51 +177,6 @@ const AdminCategories = () => {
     return result;
   };
 
-  const columns = [
-    {
-      title: 'ID',
-      dataIndex: 'category_id',
-      key: 'category_id',
-      width: 80,
-    },
-    {
-      title: 'Tên Danh Mục',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text, record) => (
-        <span style={{ paddingLeft: record.level * 20 }}>
-          {'─'.repeat(record.level)} {text}
-        </span>
-      ),
-    },
-    {
-      title: 'Slug',
-      dataIndex: 'slug',
-      key: 'slug',
-    },
-    {
-      title: 'Thao Tác',
-      key: 'action',
-      width: 150,
-      render: (_, record) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)}>
-            Sửa
-          </Button>
-          <Popconfirm
-            title="Bạn có chắc muốn xóa danh mục này?"
-            onConfirm={() => handleDelete(record.category_id)}
-            okText="Xóa"
-            cancelText="Hủy"
-          >
-            <Button type="primary" danger icon={<DeleteOutlined />} size="small">
-              Xóa
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
 
   return (
     <div>
@@ -222,6 +188,8 @@ const AdminCategories = () => {
           onClick={() => {
             setEditingCategory(null);
             form.resetFields();
+            // Clear slug field when adding new category
+            form.setFieldsValue({ slug: '' });
             setShowForm(true);
           }}
         >
@@ -229,13 +197,82 @@ const AdminCategories = () => {
         </Button>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={flattenCategories(categories)}
-        rowKey="category_id"
-        loading={loading}
-        locale={{ emptyText: 'Chưa có danh mục nào' }}
-      />
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '50px' }}>
+          <Spin size="large" />
+        </div>
+      ) : categories.length === 0 ? (
+        <Empty description="Chưa có danh mục nào" />
+      ) : (
+        <Row gutter={[16, 16]}>
+          {flattenCategories(categories).map((cat) => (
+            <Col key={cat.category_id} xs={24} sm={12} md={8} lg={6} xl={4}>
+              <Card
+                hoverable
+                style={{ height: '100%' }}
+                actions={[
+                  <Button
+                    key="edit"
+                    type="text"
+                    icon={<EditOutlined />}
+                    onClick={() => handleEdit(cat)}
+                    block
+                  >
+                    Sửa
+                  </Button>,
+                  <Popconfirm
+                    key="delete"
+                    title="Bạn có chắc muốn xóa danh mục này?"
+                    onConfirm={() => handleDelete(cat.category_id)}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                  >
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      block
+                    >
+                      Xóa
+                    </Button>
+                  </Popconfirm>,
+                ]}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <FolderOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '12px' }} />
+                  <div style={{ marginBottom: '8px' }}>
+                    <Tag color="blue" style={{ fontSize: '12px' }}>
+                      ID: {cat.category_id}
+                    </Tag>
+                    {cat.level > 0 && (
+                      <Tag color="default" style={{ fontSize: '12px' }}>
+                        Cấp {cat.level + 1}
+                      </Tag>
+                    )}
+                  </div>
+                  <Typography.Title level={5} style={{ margin: '8px 0', minHeight: '48px' }}>
+                    {cat.name}
+                  </Typography.Title>
+                  {cat.slug && (
+                    <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '8px' }}>
+                      {cat.slug}
+                    </Typography.Text>
+                  )}
+                  {cat.description && (
+                    <Typography.Text
+                      type="secondary"
+                      ellipsis
+                      style={{ fontSize: '12px', display: 'block', marginTop: '8px', minHeight: '36px' }}
+                    >
+                      {cat.description}
+                    </Typography.Text>
+                  )}
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
 
       <Modal
         title={editingCategory ? 'Sửa Danh Mục' : 'Thêm Danh Mục'}
@@ -260,14 +297,6 @@ const AdminCategories = () => {
           >
             <Input 
               placeholder="Nhập tên danh mục" 
-              onChange={(e) => {
-                // Auto-generate slug when name changes (only if slug is empty)
-                const currentSlug = form.getFieldValue('slug');
-                if (!currentSlug || currentSlug.trim() === '') {
-                  const autoSlug = generateSlug(e.target.value);
-                  form.setFieldsValue({ slug: autoSlug });
-                }
-              }}
             />
           </Form.Item>
           <Form.Item 
@@ -278,7 +307,7 @@ const AdminCategories = () => {
             <Input.Group compact>
               <Input 
                 style={{ width: 'calc(100% - 120px)' }}
-                placeholder="Slug sẽ được tạo tự động từ tên danh mục" 
+                placeholder={editingCategory ? "Slug của danh mục" : "Slug sẽ được tạo tự động từ tên danh mục"}
               />
               <Button
                 type="default"
@@ -289,6 +318,16 @@ const AdminCategories = () => {
                 Tạo tự động
               </Button>
             </Input.Group>
+            {slugValue && (
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: '4px', fontSize: '12px' }}>
+                <strong>✓ Slug đã tạo:</strong> <span style={{ color: '#1890ff', fontFamily: 'monospace', fontWeight: 'bold' }}>{slugValue}</span>
+              </div>
+            )}
+            {editingCategory && slugValue && (
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#999' }}>
+                Slug hiện tại: <strong>{slugValue}</strong>
+              </div>
+            )}
           </Form.Item>
           <Form.Item name="description" label="Mô Tả">
             <TextArea rows={4} placeholder="Nhập mô tả" />

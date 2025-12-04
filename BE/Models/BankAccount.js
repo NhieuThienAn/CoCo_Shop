@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createBankAccountModel = () => {
   const baseModel = createBaseModel({
     tableName: 'bank_accounts',
@@ -26,11 +25,9 @@ const createBankAccountModel = () => {
       'updated_at',
     ],
   });
-
   const findByBankId = async (bankId) => {
     return baseModel.findAll({ filters: { bank_id: bankId } });
   };
-
   const findByAccountNumber = async (accountNumber, bankId = null) => {
     if (bankId) {
       const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`account_number\` = ? AND \`bank_id\` = ? LIMIT 1`;
@@ -42,7 +39,6 @@ const createBankAccountModel = () => {
       return Array.isArray(rows) ? rows[0] || null : rows;
     }
   };
-
   const findActiveAccounts = async (accountType = null) => {
     const filters = { status: 'active' };
     if (accountType) {
@@ -50,28 +46,20 @@ const createBankAccountModel = () => {
     }
     return baseModel.findAll({ filters });
   };
-
-  /**
-   * Find account by bank_id, account_type and is_internal (SQL WHERE clause)
-   */
   const findByBankIdTypeAndInternal = async (bankId, accountType, isInternal) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`bank_id\` = ? AND \`account_type\` = ? AND \`is_internal\` = ? LIMIT 1`;
     const rows = await baseModel.execute(sql, [bankId, accountType, isInternal]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
-
   const updateBalance = async (accountId, amount, type = 'credit') => {
     const account = await baseModel.findById(accountId);
     if (!account) return null;
-
     const balance = parseFloat(account.balance || 0);
     const availableBalance = parseFloat(account.available_balance || 0);
     const pendingBalance = parseFloat(account.pending_balance || 0);
-
     let newBalance = balance;
     let newAvailableBalance = availableBalance;
     let newPendingBalance = pendingBalance;
-
     if (type === 'credit') {
       newBalance = balance + amount;
       newAvailableBalance = availableBalance + amount;
@@ -82,7 +70,6 @@ const createBankAccountModel = () => {
       newPendingBalance = pendingBalance + amount;
       newAvailableBalance = availableBalance - amount;
     }
-
     return baseModel.update(accountId, {
       balance: newBalance,
       available_balance: newAvailableBalance,
@@ -90,7 +77,6 @@ const createBankAccountModel = () => {
       updated_at: new Date(),
     });
   };
-
   return {
     ...baseModel,
     findByBankId,
@@ -100,5 +86,4 @@ const createBankAccountModel = () => {
     updateBalance,
   };
 };
-
 module.exports = createBankAccountModel;

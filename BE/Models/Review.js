@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createReviewModel = () => {
   const baseModel = createBaseModel({
     tableName: 'reviews',
@@ -14,7 +13,6 @@ const createReviewModel = () => {
       'updated_at',
     ],
   });
-
   const findByProductId = async (productId, options = {}) => {
     const { limit, offset } = options;
     let sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`product_id\` = ? ORDER BY \`created_at\` DESC`;
@@ -26,18 +24,15 @@ const createReviewModel = () => {
     }
     return await baseModel.execute(sql, [productId]);
   };
-
   const findByUserId = async (userId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`user_id\` = ? ORDER BY \`created_at\` DESC`;
     return await baseModel.execute(sql, [userId]);
   };
-
   const findByUserAndProduct = async (userId, productId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`user_id\` = ? AND \`product_id\` = ? LIMIT 1`;
     const rows = await baseModel.execute(sql, [userId, productId]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
-
   const getProductRating = async (productId) => {
     const sql = `
       SELECT 
@@ -62,7 +57,6 @@ const createReviewModel = () => {
       rating_1: 0,
     };
   };
-
   return {
     ...baseModel,
     findByProductId,
@@ -71,5 +65,4 @@ const createReviewModel = () => {
     getProductRating,
   };
 };
-
 module.exports = createReviewModel;

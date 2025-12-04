@@ -77,10 +77,32 @@ const ShipperOrders = () => {
           const shipments = shipmentRes.success ? (shipmentRes.data || []) : [];
           const hasShipper = shipments.some(s => s.shipper_id);
           if (!hasShipper) {
+            // Enrich user data nếu chưa có
+            if (orderItem.user_id && !orderItem.user) {
+              try {
+                const userResponse = await user.getUserById(orderItem.user_id);
+                if (userResponse.success && userResponse.data) {
+                  orderItem.user = userResponse.data;
+                }
+              } catch (error) {
+                console.error('Error fetching user info for order', orderItem.order_id, error);
+              }
+            }
             availableOrders.push(orderItem);
           }
         } catch (error) {
           // Nếu không lấy được shipment, coi như đơn hàng chưa có shipper
+          // Enrich user data nếu chưa có
+          if (orderItem.user_id && !orderItem.user) {
+            try {
+              const userResponse = await user.getUserById(orderItem.user_id);
+              if (userResponse.success && userResponse.data) {
+                orderItem.user = userResponse.data;
+              }
+            } catch (userError) {
+              console.error('Error fetching user info for order', orderItem.order_id, userError);
+            }
+          }
           availableOrders.push(orderItem);
         }
       }
@@ -112,6 +134,17 @@ const ShipperOrders = () => {
           if (orderRes.success && orderRes.data) {
             const orderData = orderRes.data;
             orderData.shipment = shipmentItem;
+            // Enrich user data nếu chưa có
+            if (orderData.user_id && !orderData.user) {
+              try {
+                const userResponse = await user.getUserById(orderData.user_id);
+                if (userResponse.success && userResponse.data) {
+                  orderData.user = userResponse.data;
+                }
+              } catch (error) {
+                console.error('Error fetching user info for order', orderData.order_id, error);
+              }
+            }
             myOrdersList.push(orderData);
           }
         } catch (error) {
@@ -609,8 +642,13 @@ const ShipperOrders = () => {
                           <UserOutlined style={{ marginRight: '8px', color: '#1890ff' }} />
                           <Text strong>Khách hàng:</Text>
                           <div style={{ marginLeft: '24px', marginTop: '4px' }}>
-                            <div>{user.username || 'N/A'}</div>
-                            <div style={{ fontSize: '12px', color: '#999' }}>{user.email || ''}</div>
+                            <div>{user.username || user.email || 'N/A'}</div>
+                            {user.email && user.email !== user.username && (
+                              <div style={{ fontSize: '12px', color: '#999' }}>{user.email}</div>
+                            )}
+                            {user.phone && (
+                              <div style={{ fontSize: '12px', color: '#999' }}>{user.phone}</div>
+                            )}
                           </div>
                         </div>
 
@@ -749,8 +787,13 @@ const ShipperOrders = () => {
                               <UserOutlined style={{ marginRight: '8px', color: '#1890ff' }} />
                               <Text strong>Khách hàng:</Text>
                               <div style={{ marginLeft: '24px', marginTop: '4px' }}>
-                                <div>{user.username || 'N/A'}</div>
-                                <div style={{ fontSize: '12px', color: '#999' }}>{user.email || ''}</div>
+                                <div>{user.username || user.email || 'N/A'}</div>
+                                {user.email && user.email !== user.username && (
+                                  <div style={{ fontSize: '12px', color: '#999' }}>{user.email}</div>
+                                )}
+                                {user.phone && (
+                                  <div style={{ fontSize: '12px', color: '#999' }}>{user.phone}</div>
+                                )}
                               </div>
                             </div>
 

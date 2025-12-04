@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createEmailOtpModel = () => {
   const baseModel = createBaseModel({
     tableName: 'email_otps',
@@ -18,20 +17,17 @@ const createEmailOtpModel = () => {
       'verified_at',
     ],
   });
-
   /**
    * Tạo OTP mới
    * @param {Object} data - { email, otp_code, user_id, purpose, expires_at, registration_data }
    */
+
   const create = async (data) => {
-    // Xóa các OTP cũ chưa verify của email này
     await baseModel.execute(
       `DELETE FROM \`${baseModel.tableName}\` 
        WHERE \`email\` = ? AND \`verified\` = 0 AND \`expires_at\` < NOW()`,
       [data.email]
     );
-
-    // Tạo OTP mới
     const sql = `
       INSERT INTO \`${baseModel.tableName}\` 
       (\`email\`, \`otp_code\`, \`user_id\`, \`purpose\`, \`registration_data\`, \`expires_at\`, \`verified\`, \`attempts\`)
@@ -47,13 +43,13 @@ const createEmailOtpModel = () => {
     ]);
     return result;
   };
-
   /**
    * Tìm OTP chưa verify và chưa hết hạn
    * @param {string} email
    * @param {string} otpCode
    * @param {string} purpose - optional
    */
+
   const findValidOTP = async (email, otpCode, purpose = 'email_verification') => {
     const sql = `
       SELECT * FROM \`${baseModel.tableName}\`
@@ -68,12 +64,12 @@ const createEmailOtpModel = () => {
     const rows = await baseModel.execute(sql, [email, otpCode, purpose]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
-
   /**
    * Tìm OTP mới nhất chưa verify của email
    * @param {string} email
    * @param {string} purpose - optional
    */
+
   const findLatestOTP = async (email, purpose = 'email_verification') => {
     const sql = `
       SELECT * FROM \`${baseModel.tableName}\`
@@ -87,11 +83,11 @@ const createEmailOtpModel = () => {
     const rows = await baseModel.execute(sql, [email, purpose]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
-
   /**
    * Đánh dấu OTP đã được verify
    * @param {number} otpId
    */
+
   const markAsVerified = async (otpId) => {
     const sql = `
       UPDATE \`${baseModel.tableName}\`
@@ -100,11 +96,11 @@ const createEmailOtpModel = () => {
     `;
     await baseModel.execute(sql, [otpId]);
   };
-
   /**
    * Tăng số lần thử sai
    * @param {number} otpId
    */
+
   const incrementAttempts = async (otpId) => {
     const sql = `
       UPDATE \`${baseModel.tableName}\`
@@ -113,10 +109,6 @@ const createEmailOtpModel = () => {
     `;
     await baseModel.execute(sql, [otpId]);
   };
-
-  /**
-   * Xóa các OTP đã hết hạn
-   */
   const cleanupExpired = async () => {
     const sql = `
       DELETE FROM \`${baseModel.tableName}\`
@@ -125,12 +117,12 @@ const createEmailOtpModel = () => {
     const result = await baseModel.execute(sql, []);
     return result.affectedRows || 0;
   };
-
   /**
    * Đếm số lần gửi OTP trong khoảng thời gian (rate limiting)
    * @param {string} email
    * @param {number} minutes - Số phút gần đây
    */
+
   const countRecentOTPs = async (email, minutes = 10) => {
     const sql = `
       SELECT COUNT(*) as count
@@ -141,7 +133,6 @@ const createEmailOtpModel = () => {
     const rows = await baseModel.execute(sql, [email, minutes]);
     return Array.isArray(rows) && rows[0] ? parseInt(rows[0].count) : 0;
   };
-
   return {
     ...baseModel,
     create,
@@ -153,6 +144,4 @@ const createEmailOtpModel = () => {
     countRecentOTPs,
   };
 };
-
 module.exports = createEmailOtpModel;
-

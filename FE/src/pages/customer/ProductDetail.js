@@ -112,8 +112,7 @@ const ProductDetail = () => {
       const productId = parseInt(id);
       await cart.addToCart(productId, quantity);
       message.success('Đã thêm vào giỏ hàng');
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      // CartContext will automatically dispatch cartUpdated event with detail
     } catch (error) {
       console.error('[ProductDetail] ❌ Error adding to cart:', error);
       message.error('Có lỗi xảy ra');
@@ -265,8 +264,7 @@ const ProductDetail = () => {
         });
       }
       
-      // Dispatch custom event to update cart count in header
-      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      // CartContext will automatically dispatch cartUpdated event with detail
       navigate('/checkout');
     } catch (error) {
       console.error('[ProductDetail] ❌ Error in buy now:', error);

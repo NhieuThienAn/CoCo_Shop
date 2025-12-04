@@ -65,6 +65,57 @@ export const clearCart = () =>
     method: 'DELETE',
   });
 
+/**
+ * Admin: Get all carts (Admin only)
+ * GET /api/cart/admin/all
+ */
+export const getAllCarts = (page = 1, limit = 20, filters = {}) => {
+  const params = new URLSearchParams({ page, limit, ...filters });
+  return apiCall(`/cart/admin/all?${params.toString()}`);
+};
+
+/**
+ * Admin: Get cart by user ID with details (Admin only)
+ * GET /api/cart/admin/user/:userId
+ */
+export const getCartByUserId = (userId) =>
+  apiCall(`/cart/admin/user/${userId}`);
+
+/**
+ * Admin: Update cart item (Admin only)
+ * PUT /api/cart/admin/item/:id
+ */
+export const updateCartItemByAdmin = (id, quantity) =>
+  apiCall(`/cart/admin/item/${id}`, {
+    method: 'PUT',
+    body: { quantity },
+  });
+
+/**
+ * Admin: Delete cart item (Admin only)
+ * DELETE /api/cart/admin/item/:id
+ */
+export const deleteCartItemByAdmin = (id) =>
+  apiCall(`/cart/admin/item/${id}`, {
+    method: 'DELETE',
+  });
+
+/**
+ * Admin: Clear user cart (Admin only)
+ * DELETE /api/cart/admin/user/:userId/clear
+ */
+export const clearUserCartByAdmin = (userId) =>
+  apiCall(`/cart/admin/user/${userId}/clear`, {
+    method: 'DELETE',
+  });
+
+/**
+ * Admin: Get cart statistics (Admin only)
+ * GET /api/cart/admin/statistics
+ */
+export const getCartStatistics = () =>
+  apiCall('/cart/admin/statistics');
+
 export default {
   getCart,
   getCartTotal,
@@ -73,5 +124,12 @@ export default {
   updateCartItem,
   removeFromCart,
   clearCart,
+  // Admin functions
+  getAllCarts,
+  getCartByUserId,
+  updateCartItemByAdmin,
+  deleteCartItemByAdmin,
+  clearUserCartByAdmin,
+  getCartStatistics,
 };
 

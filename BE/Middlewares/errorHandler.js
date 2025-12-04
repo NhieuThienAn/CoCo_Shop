@@ -1,9 +1,4 @@
-/**
- * Error Handler Middleware
- */
 const winston = require('winston');
-
-// Create logger
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -13,14 +8,10 @@ const logger = winston.createLogger({
   ),
   defaultMeta: { service: 'coco-api' },
   transports: [
-    // Write all logs with importance level of `error` or less to `error.log`
     new winston.transports.File({ filename: 'Logs/error.log', level: 'error' }),
-    // Write all logs with importance level of `info` or less to `combined.log`
     new winston.transports.File({ filename: 'Logs/combined.log' }),
   ],
 });
-
-// If we're not in production, log to the console
 if (process.env.NODE_ENV !== 'production') {
   logger.add(new winston.transports.Console({
     format: winston.format.combine(
@@ -29,12 +20,7 @@ if (process.env.NODE_ENV !== 'production') {
     ),
   }));
 }
-
-/**
- * Error Handler Middleware
- */
 const errorHandler = (err, req, res, next) => {
-  // Log error
   logger.error({
     message: err.message,
     stack: err.stack,
@@ -45,14 +31,8 @@ const errorHandler = (err, req, res, next) => {
     params: req.params,
     query: req.query,
   });
-
-  // Determine status code
   const statusCode = err.statusCode || err.status || 500;
-
-  // Determine error message
   let message = err.message || 'Internal server error';
-  
-  // Handle specific error types
   if (err.name === 'ValidationError') {
     message = 'Validation Error: ' + message;
   } else if (err.name === 'UnauthorizedError') {
@@ -64,8 +44,6 @@ const errorHandler = (err, req, res, next) => {
   } else if (err.code === 'ER_NO_REFERENCED_ROW_2') {
     message = 'Referenced record does not exist';
   }
-
-  // Send error response
   res.status(statusCode).json({
     success: false,
     message,
@@ -75,10 +53,6 @@ const errorHandler = (err, req, res, next) => {
     }),
   });
 };
-
-/**
- * 404 Not Found Handler
- */
 const notFoundHandler = (req, res) => {
   logger.warn({
     message: 'Route not found',
@@ -86,7 +60,6 @@ const notFoundHandler = (req, res) => {
     method: req.method,
     ip: req.ip,
   });
-
   res.status(404).json({
     success: false,
     message: 'Route not found',
@@ -94,10 +67,8 @@ const notFoundHandler = (req, res) => {
     method: req.method,
   });
 };
-
 module.exports = {
   errorHandler,
   notFoundHandler,
   logger,
 };
-

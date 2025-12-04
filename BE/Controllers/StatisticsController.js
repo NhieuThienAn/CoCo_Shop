@@ -1,8 +1,3 @@
-/**
- * StatisticsController
- * Cung cấp các API thống kê toàn bộ hệ thống cho admin
- */
-
 const { getDatabase } = require('../Config/database');
 const {
   order,
@@ -18,14 +13,9 @@ const {
   bankTransaction,
   bankAccount,
 } = require('../Models');
-
-/**
- * Parse date range từ query params
- */
 const parseDateRange = (startDate, endDate) => {
   let start = null;
   let end = null;
-
   if (startDate) {
     start = new Date(startDate);
     if (isNaN(start.getTime())) {
@@ -34,7 +24,6 @@ const parseDateRange = (startDate, endDate) => {
       start.setHours(0, 0, 0, 0);
     }
   }
-
   if (endDate) {
     end = new Date(endDate);
     if (isNaN(end.getTime())) {
@@ -43,89 +32,58 @@ const parseDateRange = (startDate, endDate) => {
       end.setHours(23, 59, 59, 999);
     }
   }
-
   return { start, end };
 };
-
-/**
- * Build WHERE clause cho date range
- */
 const buildDateFilter = (column, start, end) => {
   const conditions = [];
   const values = [];
-
   if (start) {
     conditions.push(`${column} >= ?`);
     values.push(start);
   }
-
   if (end) {
     conditions.push(`${column} <= ?`);
     values.push(end);
   }
-
   return {
     clause: conditions.length > 0 ? conditions.join(' AND ') : null,
     values,
   };
 };
-
-/**
- * Convert date filter clause để sử dụng với table alias
- */
 const convertDateFilterForAlias = (clause, alias) => {
   if (!clause || !alias) return clause;
-  // Replace created_at với alias.created_at, nhưng không replace nếu đã có alias
   return clause.replace(/\bcreated_at\b/g, `${alias}.created_at`);
 };
-
-/**
- * Get Paid payment status ID dynamically
- */
 const getPaidStatusId = async () => {
   try {
     const paidStatus = await paymentStatus.findByName('Paid');
     if (paidStatus && paidStatus.payment_status_id) {
       return paidStatus.payment_status_id;
     }
-    // Fallback: try to find by LIKE using SQL
     const { paymentStatus } = require('../Models');
     const statusRow = await paymentStatus.findFirstByNameLike('paid');
     if (statusRow && statusRow.payment_status_id) {
       return statusRow.payment_status_id;
     }
-    // Last resort: assume 2 (common default)
     console.warn('[StatisticsController] ⚠️ Could not find Paid status, using default 2');
     return 2;
   } catch (error) {
     console.error('[StatisticsController] Error finding Paid status:', error.message);
-    // Last resort: assume 2
     return 2;
   }
 };
-
-/**
- * Tổng quan hệ thống
- * GET /api/statistics/overview
- */
 const getOverview = async (req, res) => {
   console.log('[StatisticsController] ========================================');
   console.log('[StatisticsController] getOverview called');
   console.log('[StatisticsController] Query params:', req.query);
-  
   try {
     const { startDate, endDate } = req.query;
     const { start, end } = parseDateRange(startDate, endDate);
     console.log('[StatisticsController] Parsed dates:', { start, end });
-
     const db = getDatabase();
-
-    // Build date filter
     const dateFilter = buildDateFilter('created_at', start, end);
     const dateWhere = dateFilter.clause ? `WHERE ${dateFilter.clause}` : '';
     const dateValues = dateFilter.values;
-
-    // 1. Tổng số đơn hàng
     console.log('[StatisticsController] Query 1: Total orders');
     console.log('[StatisticsController] SQL:', `SELECT COUNT(*) as total FROM \`orders\` ${dateWhere}`);
     console.log('[StatisticsController] Values:', dateValues);
@@ -136,8 +94,6 @@ const getOverview = async (req, res) => {
     console.log('[StatisticsController] Order count result:', orderCountRows);
     const totalOrders = parseInt(orderCountRows?.[0]?.total || 0);
     console.log('[StatisticsController] Total orders:', totalOrders);
-
-    // 2. Tổng doanh thu (từ payments đã thanh toán)
     const paidStatusId = await getPaidStatusId();
     console.log('[StatisticsController] Paid status ID:', paidStatusId);
     const revenueDateClause = dateFilter.clause ? `AND ${convertDateFilterForAlias(dateFilter.clause, 'o')}` : '';
@@ -152,8 +108,6 @@ const getOverview = async (req, res) => {
     console.log('[StatisticsController] Revenue result:', revenueResult);
     const totalRevenue = parseFloat(revenueResult?.[0]?.total_revenue || 0);
     console.log('[StatisticsController] Total revenue:', totalRevenue);
-
-    // 3. Tổng số khách hàng
     const userDateFilter = buildDateFilter('created_at', start, end);
     const userWhere = userDateFilter.clause ? `WHERE role_id = 3 AND ${userDateFilter.clause}` : 'WHERE role_id = 3';
     console.log('[StatisticsController] Query 3: Total customers');
@@ -166,13 +120,9 @@ const getOverview = async (req, res) => {
     console.log('[StatisticsController] User count result:', userCountResult);
     const totalCustomers = parseInt(userCountResult?.[0]?.total || 0);
     console.log('[StatisticsController] Total customers:', totalCustomers);
-
-    // 4. Tổng số sản phẩm
-    // NOTE: products.created_at có thể NULL, nên chỉ filter nếu có date range
     let productCountQuery = 'SELECT COUNT(*) as total FROM `products`';
     let productCountValues = [];
     if (dateFilter.clause) {
-      // Chỉ filter nếu có created_at (không NULL)
       productCountQuery = `SELECT COUNT(*) as total FROM \`products\` WHERE created_at IS NOT NULL AND ${dateFilter.clause}`;
       productCountValues = dateValues;
     }
@@ -183,9 +133,6 @@ const getOverview = async (req, res) => {
     console.log('[StatisticsController] Product count result:', productCountResult);
     const totalProducts = parseInt(productCountResult?.[0]?.total || 0);
     console.log('[StatisticsController] Total products:', totalProducts);
-
-    // 5. Đơn hàng theo trạng thái
-    // Với LEFT JOIN, cần đặt date filter trong ON clause để giữ LEFT JOIN behavior
     const orderStatusOnClause = dateFilter.clause 
       ? `ON os.status_id = o.status_id AND ${convertDateFilterForAlias(dateFilter.clause, 'o')}`
       : `ON os.status_id = o.status_id`;
@@ -203,10 +150,7 @@ const getOverview = async (req, res) => {
     const [orderStatusCountsRows] = await db.execute(orderStatusQuery, dateValues);
     console.log('[StatisticsController] Order status counts result:', orderStatusCountsRows?.length || 0, 'rows');
     const orderStatusCounts = orderStatusCountsRows || [];
-
-    // 6. Doanh thu theo phương thức thanh toán
     const paymentMethodPaidStatusId = await getPaidStatusId();
-    // Với LEFT JOIN, đặt date filter trong ON clause của orders join
     const paymentMethodOrderJoin = dateFilter.clause
       ? `LEFT JOIN \`orders\` o ON p.order_id = o.order_id AND ${convertDateFilterForAlias(dateFilter.clause, 'o')}`
       : `LEFT JOIN \`orders\` o ON p.order_id = o.order_id`;
@@ -234,9 +178,6 @@ const getOverview = async (req, res) => {
       throw paymentMethodError;
     }
     const revenueByPaymentMethod = revenueByPaymentMethodRows || [];
-
-    // 7. Top sản phẩm bán chạy
-    // NOTE: orderitems.product_id references products.id (primary key), not products.product_id
     const topProductsWhere = dateFilter.clause ? `WHERE ${convertDateFilterForAlias(dateFilter.clause, 'o')}` : '';
     const topProductsQuery = `SELECT 
         p.id as product_id,
@@ -269,8 +210,6 @@ const getOverview = async (req, res) => {
       throw topProductsError;
     }
     const topProducts = topProductsRows || [];
-
-    // 8. Doanh thu theo ngày (7 ngày gần nhất hoặc theo date range)
     const revenueByDayPaidStatusId = await getPaidStatusId();
     let revenueByDay;
     if (start && end) {
@@ -290,7 +229,6 @@ const getOverview = async (req, res) => {
       console.log('[StatisticsController] Revenue by day result:', revenueByDayRows?.length || 0, 'rows');
       revenueByDay = revenueByDayRows || [];
     } else {
-      // 7 ngày gần nhất
       const revenueByDayQuery = `SELECT 
           DATE(o.created_at) as date,
           COALESCE(SUM(p.amount), 0) as revenue,
@@ -307,7 +245,6 @@ const getOverview = async (req, res) => {
       console.log('[StatisticsController] Revenue by day result:', revenueByDayRows?.length || 0, 'rows');
       revenueByDay = revenueByDayRows || [];
     }
-
     const responseData = {
       summary: {
         totalOrders,
@@ -324,11 +261,9 @@ const getOverview = async (req, res) => {
         end: end ? end.toISOString() : null,
       },
     };
-    
     console.log('[StatisticsController] ✅ Overview response prepared');
     console.log('[StatisticsController] Summary:', JSON.stringify(responseData.summary, null, 2));
     console.log('[StatisticsController] ========================================');
-    
     return res.status(200).json({
       success: true,
       data: responseData,
@@ -336,7 +271,6 @@ const getOverview = async (req, res) => {
   } catch (error) {
     console.error('[StatisticsController] ❌ ERROR IN getOverview:', error.message);
     console.error('[StatisticsController] Error stack:', error.stack);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê tổng quan',
@@ -344,64 +278,44 @@ const getOverview = async (req, res) => {
     });
   }
 };
-
-/**
- * Thống kê đơn hàng chi tiết
- * GET /api/statistics/orders
- */
 const getOrderStatistics = async (req, res) => {
   console.log('[StatisticsController] ========================================');
   console.log('[StatisticsController] getOrderStatistics called');
   console.log('[StatisticsController] Query params:', req.query);
-  
   try {
     const { startDate, endDate, statusId, paymentMethodId } = req.query;
     const { start, end } = parseDateRange(startDate, endDate);
     console.log('[StatisticsController] Parsed dates:', { start, end });
-
     const db = getDatabase();
-
-    // Build filters
     const conditions = [];
     const values = [];
-
     if (start) {
       conditions.push('o.created_at >= ?');
       values.push(start);
     }
-
     if (end) {
       conditions.push('o.created_at <= ?');
       values.push(end);
     }
-
     if (statusId) {
       conditions.push('o.status_id = ?');
       values.push(parseInt(statusId));
     }
-
-    // Build WHERE clause for orders
     const orderConditions = [];
     const orderValues = [];
-    
     if (start) {
       orderConditions.push('o.created_at >= ?');
       orderValues.push(start);
     }
-    
     if (end) {
       orderConditions.push('o.created_at <= ?');
       orderValues.push(end);
     }
-    
     if (statusId) {
       orderConditions.push('o.status_id = ?');
       orderValues.push(parseInt(statusId));
     }
-    
     const orderWhereClause = orderConditions.length > 0 ? `AND ${orderConditions.join(' AND ')}` : '';
-    
-    // Nếu có paymentMethodId filter, cần JOIN với payments
     let paymentJoin = '';
     let paymentFilter = '';
     if (paymentMethodId) {
@@ -409,8 +323,6 @@ const getOrderStatistics = async (req, res) => {
       paymentFilter = 'AND p.payment_method_id = ?';
       orderValues.push(parseInt(paymentMethodId));
     }
-
-    // Đơn hàng theo trạng thái
     const [ordersByStatusRows] = await db.execute(
       `SELECT 
         os.status_id,
@@ -426,8 +338,6 @@ const getOrderStatistics = async (req, res) => {
       orderValues
     );
     const ordersByStatus = ordersByStatusRows || [];
-
-    // Đơn hàng theo ngày
     let ordersByDay;
     const ordersByDayConditions = [...orderConditions];
     const ordersByDayValues = [...orderValues];
@@ -437,7 +347,6 @@ const getOrderStatistics = async (req, res) => {
     }
     const ordersByDayWhere = ordersByDayConditions.length > 0 ? `WHERE ${ordersByDayConditions.join(' AND ')}` : '';
     const ordersByDayPaymentJoin = paymentMethodId ? 'INNER JOIN `payments` p ON o.order_id = p.order_id' : '';
-    
     if (start && end) {
       const [ordersByDayRows] = await db.execute(
         `SELECT 
@@ -468,8 +377,6 @@ const getOrderStatistics = async (req, res) => {
       );
       ordersByDay = ordersByDayRows || [];
     }
-
-    // Đơn hàng theo tháng
     const [ordersByMonthRows] = await db.execute(
       `SELECT 
         DATE_FORMAT(o.created_at, '%Y-%m') as month,
@@ -484,7 +391,6 @@ const getOrderStatistics = async (req, res) => {
       ordersByDayValues
     );
     const ordersByMonth = ordersByMonthRows || [];
-
     const responseData = {
       ordersByStatus: ordersByStatus,
       ordersByDay: ordersByDay,
@@ -496,11 +402,9 @@ const getOrderStatistics = async (req, res) => {
         paymentMethodId: paymentMethodId ? parseInt(paymentMethodId) : null,
       },
     };
-    
     console.log('[StatisticsController] ✅ Order statistics response prepared');
     console.log('[StatisticsController] Orders by status:', ordersByStatus.length, 'statuses');
     console.log('[StatisticsController] ========================================');
-    
     return res.status(200).json({
       success: true,
       data: responseData,
@@ -508,7 +412,6 @@ const getOrderStatistics = async (req, res) => {
   } catch (error) {
     console.error('[StatisticsController] ❌ ERROR IN getOrderStatistics:', error.message);
     console.error('[StatisticsController] Error stack:', error.stack);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê đơn hàng',
@@ -516,51 +419,35 @@ const getOrderStatistics = async (req, res) => {
     });
   }
 };
-
-/**
- * Thống kê doanh thu
- * GET /api/statistics/revenue
- */
 const getRevenueStatistics = async (req, res) => {
   console.log('[StatisticsController] ========================================');
   console.log('[StatisticsController] getRevenueStatistics called');
   console.log('[StatisticsController] Query params:', req.query);
-  
   try {
     const { startDate, endDate, paymentMethodId, groupBy = 'day' } = req.query;
     const { start, end } = parseDateRange(startDate, endDate);
     console.log('[StatisticsController] Parsed dates:', { start, end });
-
     const db = getDatabase();
-
-    // Build filters
     const conditions = [];
     const values = [];
-
     if (start) {
       conditions.push('o.created_at >= ?');
       values.push(start);
     }
-
     if (end) {
       conditions.push('o.created_at <= ?');
       values.push(end);
     }
-
     if (paymentMethodId) {
       conditions.push('p.payment_method_id = ?');
       values.push(parseInt(paymentMethodId));
     }
-
-    // Chỉ lấy payments đã thanh toán
     const paidStatusId = await getPaidStatusId();
     conditions.push('p.payment_status_id = ?');
     values.push(paidStatusId);
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
     let revenueData;
     let groupByClause;
-
     switch (groupBy) {
       case 'day':
         groupByClause = 'DATE(o.created_at)';
@@ -574,7 +461,6 @@ const getRevenueStatistics = async (req, res) => {
       default:
         groupByClause = 'DATE(o.created_at)';
     }
-
     const [revenueDataRows] = await db.execute(
       `SELECT 
         ${groupByClause} as period,
@@ -590,8 +476,6 @@ const getRevenueStatistics = async (req, res) => {
       values
     );
     revenueData = revenueDataRows || [];
-
-    // Tổng doanh thu
     const [totalRevenueResult] = await db.execute(
       `SELECT 
         COALESCE(SUM(p.amount), 0) as total_revenue,
@@ -603,13 +487,9 @@ const getRevenueStatistics = async (req, res) => {
        ${whereClause}`,
       values
     );
-
-    // Doanh thu theo phương thức thanh toán
     const revenuePaidStatusId = await getPaidStatusId();
-    // Remove the last condition (payment_status_id) for this query since we'll add it in JOIN
     const paymentMethodConditions = [...conditions];
     const paymentMethodValues = [...values];
-    // Remove the last element (paidStatusId) since we'll use it in JOIN
     paymentMethodValues.pop();
     paymentMethodConditions.pop();
     const paymentMethodWhere = paymentMethodConditions.length > 0 ? `WHERE ${paymentMethodConditions.join(' AND ')}` : '';
@@ -633,7 +513,6 @@ const getRevenueStatistics = async (req, res) => {
       throw paymentMethodError;
     }
     const revenueByPaymentMethod = revenueByPaymentMethodRows || [];
-
     const responseData = {
       revenueData: revenueData,
       summary: totalRevenueResult?.[0] || {},
@@ -645,12 +524,10 @@ const getRevenueStatistics = async (req, res) => {
         groupBy,
       },
     };
-    
     console.log('[StatisticsController] ✅ Revenue statistics response prepared');
     console.log('[StatisticsController] Revenue data points:', revenueData.length);
     console.log('[StatisticsController] Total revenue:', responseData.summary.total_revenue);
     console.log('[StatisticsController] ========================================');
-    
     return res.status(200).json({
       success: true,
       data: responseData,
@@ -658,7 +535,6 @@ const getRevenueStatistics = async (req, res) => {
   } catch (error) {
     console.error('[StatisticsController] ❌ ERROR IN getRevenueStatistics:', error.message);
     console.error('[StatisticsController] Error stack:', error.stack);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê doanh thu',
@@ -666,54 +542,36 @@ const getRevenueStatistics = async (req, res) => {
     });
   }
 };
-
-/**
- * Thống kê người dùng
- * GET /api/statistics/users
- */
 const getUserStatistics = async (req, res) => {
   console.log('[StatisticsController] ========================================');
   console.log('[StatisticsController] getUserStatistics called');
   console.log('[StatisticsController] Query params:', req.query);
-  
   try {
     const { startDate, endDate, roleId } = req.query;
     const { start, end } = parseDateRange(startDate, endDate);
     console.log('[StatisticsController] Parsed dates:', { start, end });
-
     const db = getDatabase();
-
-    // Build filters - tách riêng date conditions và role conditions
     const dateConditions = [];
     const dateValues = [];
     const roleConditions = [];
     const roleValues = [];
-
     if (start) {
       dateConditions.push('u.created_at >= ?');
       dateValues.push(start);
     }
-
     if (end) {
       dateConditions.push('u.created_at <= ?');
       dateValues.push(end);
     }
-
     if (roleId) {
       roleConditions.push('u.role_id = ?');
       roleValues.push(parseInt(roleId));
     }
-
-    // WHERE clause cho queries đơn giản (usersByDay, totalUsers)
     const allConditions = [...dateConditions, ...roleConditions];
     const allValues = [...dateValues, ...roleValues];
     const whereClause = allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
-
-    // Người dùng theo role
-    // Sử dụng subquery để filter users theo date trước khi JOIN để tránh lỗi MySQL
     const userSubqueryConditions = [];
     const userSubqueryValues = [];
-    
     if (start) {
       userSubqueryConditions.push('created_at >= ?');
       userSubqueryValues.push(start);
@@ -726,16 +584,12 @@ const getUserStatistics = async (req, res) => {
       userSubqueryConditions.push('role_id = ?');
       userSubqueryValues.push(parseInt(roleId));
     }
-    
     const userSubqueryWhere = userSubqueryConditions.length > 0 
       ? `WHERE ${userSubqueryConditions.join(' AND ')}`
       : '';
-    
     let usersByRoleQuery;
     let usersByRoleFinalValues;
-    
     if (roleId) {
-      // Nếu có roleId filter, chỉ lấy role đó
       usersByRoleQuery = `SELECT 
         r.role_id,
         r.role_name,
@@ -751,7 +605,6 @@ const getUserStatistics = async (req, res) => {
        ORDER BY r.role_id`;
       usersByRoleFinalValues = [...userSubqueryValues, parseInt(roleId)];
     } else {
-      // Không có roleId filter, lấy tất cả roles
       usersByRoleQuery = `SELECT 
         r.role_id,
         r.role_name,
@@ -766,19 +619,14 @@ const getUserStatistics = async (req, res) => {
        ORDER BY r.role_id`;
       usersByRoleFinalValues = userSubqueryValues;
     }
-    
     console.log('[StatisticsController] Query: Users by role');
     console.log('[StatisticsController] SQL:', usersByRoleQuery);
     console.log('[StatisticsController] Values:', usersByRoleFinalValues);
     const [usersByRoleRows] = await db.execute(usersByRoleQuery, usersByRoleFinalValues);
     console.log('[StatisticsController] Users by role result:', usersByRoleRows?.length || 0, 'rows');
     const usersByRole = usersByRoleRows || [];
-
-    // Người dùng theo ngày
-    // Sửa lại để không dùng alias u trong whereClause
     const usersByDayConditions = [];
     const usersByDayValues = [];
-    
     if (start) {
       usersByDayConditions.push('created_at >= ?');
       usersByDayValues.push(start);
@@ -791,11 +639,9 @@ const getUserStatistics = async (req, res) => {
       usersByDayConditions.push('role_id = ?');
       usersByDayValues.push(parseInt(roleId));
     }
-    
     const usersByDayWhere = usersByDayConditions.length > 0 
       ? `WHERE ${usersByDayConditions.join(' AND ')}`
       : '';
-    
     let usersByDay;
     if (start && end) {
       const [usersByDayRows] = await db.execute(
@@ -823,13 +669,10 @@ const getUserStatistics = async (req, res) => {
       );
       usersByDay = usersByDayRows || [];
     }
-
-    // Tổng số người dùng
     const [totalUsersResult] = await db.execute(
       `SELECT COUNT(*) as total FROM \`users\` ${usersByDayWhere}`,
       usersByDayValues
     );
-
     return res.status(200).json({
       success: true,
       data: {
@@ -845,7 +688,6 @@ const getUserStatistics = async (req, res) => {
     });
   } catch (error) {
     console.error('[StatisticsController] ❌ ERROR IN getUserStatistics:', error.message);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê người dùng',
@@ -853,33 +695,20 @@ const getUserStatistics = async (req, res) => {
     });
   }
 };
-
-/**
- * Thống kê sản phẩm
- * GET /api/statistics/products
- */
 const getProductStatistics = async (req, res) => {
   console.log('[StatisticsController] ========================================');
   console.log('[StatisticsController] getProductStatistics called');
   console.log('[StatisticsController] Query params:', req.query);
-  
   try {
     const { categoryId, brandId, limit = 10 } = req.query;
-
     const db = getDatabase();
-
-    // Build filters
     const conditions = [];
     const values = [];
-
     if (categoryId) {
       conditions.push('p.category_id = ?');
       values.push(parseInt(categoryId));
     }
-
     if (brandId) {
-      // Products table has 'brand' column (varchar), not 'brand_id'
-      // Need to get brand name from brands table first
       try {
         const { brand } = require('../Models');
         const brandData = await brand.findById(parseInt(brandId));
@@ -889,14 +718,9 @@ const getProductStatistics = async (req, res) => {
         }
       } catch (brandError) {
         console.error('[StatisticsController] ⚠️ Error fetching brand for filter:', brandError.message);
-        // Skip brand filter if brand not found
       }
     }
-
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    // Top sản phẩm bán chạy
-    // NOTE: orderitems.product_id references products.id (primary key), not products.product_id
     const [topProductsRows] = await db.execute(
       `SELECT 
         p.id as product_id,
@@ -918,9 +742,6 @@ const getProductStatistics = async (req, res) => {
       [...values, parseInt(limit)]
     );
     const topProducts = topProductsRows || [];
-
-    // Sản phẩm theo danh mục
-    // NOTE: orderitems.product_id references products.id (primary key), not products.product_id
     const [productsByCategoryRows] = await db.execute(
       `SELECT 
         c.category_id,
@@ -935,9 +756,6 @@ const getProductStatistics = async (req, res) => {
        ORDER BY total_sold DESC`
     );
     const productsByCategory = productsByCategoryRows || [];
-
-    // Sản phẩm theo thương hiệu
-    // NOTE: orderitems.product_id references products.id (primary key), not products.product_id
     const [productsByBrandRows] = await db.execute(
       `SELECT 
         b.brand_id,
@@ -952,13 +770,10 @@ const getProductStatistics = async (req, res) => {
        ORDER BY total_sold DESC`
     );
     const productsByBrand = productsByBrandRows || [];
-
-    // Tổng số sản phẩm
     const [totalProductsResult] = await db.execute(
       `SELECT COUNT(*) as total FROM \`products\` ${whereClause}`,
       values
     );
-
     const responseData = {
       topProducts: topProducts,
       productsByCategory: productsByCategory,
@@ -970,12 +785,10 @@ const getProductStatistics = async (req, res) => {
         limit: parseInt(limit),
       },
     };
-    
     console.log('[StatisticsController] ✅ Product statistics response prepared');
     console.log('[StatisticsController] Total products:', responseData.totalProducts);
     console.log('[StatisticsController] Top products:', topProducts.length);
     console.log('[StatisticsController] ========================================');
-    
     return res.status(200).json({
       success: true,
       data: responseData,
@@ -983,7 +796,6 @@ const getProductStatistics = async (req, res) => {
   } catch (error) {
     console.error('[StatisticsController] ❌ ERROR IN getProductStatistics:', error.message);
     console.error('[StatisticsController] Error stack:', error.stack);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê sản phẩm',
@@ -991,7 +803,6 @@ const getProductStatistics = async (req, res) => {
     });
   }
 };
-
 module.exports = {
   getOverview,
   getOrderStatistics,
@@ -999,4 +810,3 @@ module.exports = {
   getUserStatistics,
   getProductStatistics,
 };
-

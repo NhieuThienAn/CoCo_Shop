@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 
-// Import all route modules
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
 const productRoutes = require('./productRoutes');
@@ -17,15 +16,8 @@ const supportRoutes = require('./supportRoutes');
 const bankRoutes = require('./bankRoutes');
 const statisticsRoutes = require('./statisticsRoutes');
 
-/**
- * API Routes
- * Base path: /api
- */
-
-// Authentication routes
 router.use('/auth', authRoutes);
 
-// Main routes
 router.use('/users', userRoutes);
 router.use('/products', productRoutes);
 router.use('/categories', categoryRoutes);
@@ -37,18 +29,12 @@ router.use('/coupons', couponRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/wishlist', wishlistRoutes);
 
-// Support routes (grouped)
 router.use('/support', supportRoutes);
 
-// Bank routes (grouped)
 router.use('/bank', bankRoutes);
 
-// Statistics routes (Admin only)
 router.use('/statistics', statisticsRoutes);
 
-/**
- * Health check endpoint
- */
 router.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -57,15 +43,12 @@ router.get('/health', (req, res) => {
   });
 });
 
-/**
- * API info endpoint
- */
 router.get('/', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'CoCo API',
     version: '1.0.0',
-    documentation: 'https://github.com/your-repo/docs',
+    documentation: 'https://github.com/cocoshop-vn/Do-An-Tot-Nghiep-2025/blob/main/SO_DO_TONG_QUAN_HE_THONG_NGAN_GON.md',
     endpoints: {
       auth: {
         base: '/api/auth',
@@ -194,4 +177,3 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
-

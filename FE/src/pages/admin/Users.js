@@ -12,8 +12,11 @@ import {
   Input,
   Select,
   Switch,
+  Row,
+  Col,
+  Tabs,
 } from 'antd';
-import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { EditOutlined, LockOutlined, UnlockOutlined, DeleteOutlined, UndoOutlined } from '@ant-design/icons';
 import { user, support } from '../../api/index.js';
 
 const { Title } = Typography;
@@ -25,19 +28,73 @@ const AdminUsers = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [roles, setRoles] = useState([]);
+  const [roleFilter, setRoleFilter] = useState(undefined); // Filter theo role_id
+  const [activeTab, setActiveTab] = useState('active'); // 'active', 'locked', 'deleted'
   const [form] = Form.useForm();
 
   useEffect(() => {
-    loadUsers();
     loadRoles();
-  }, [pagination.page]);
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [pagination.page, roleFilter, activeTab]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const response = await user.getAllUsers(pagination.page, pagination.limit);
+      // Tạo filters object với role_id nếu có
+      const filters = {};
+      if (roleFilter !== undefined && roleFilter !== null && roleFilter !== '') {
+        filters.role_id = roleFilter;
+      }
+      
+      // Thêm filter theo activeTab
+      const filterParams = {
+        includeInactive: activeTab !== 'active', // Include inactive nếu không phải tab active
+        includeDeleted: activeTab === 'deleted', // Include deleted nếu đang ở tab deleted
+        ...filters,
+      };
+      
+      // Thêm filter is_active dựa trên tab
+      if (activeTab === 'active') {
+        filterParams.is_active = 1;
+      } else if (activeTab === 'locked') {
+        filterParams.is_active = 0;
+      }
+      // Tab deleted không cần filter is_active vì đã filter theo deleted_at
+      
+      // Remove undefined values
+      Object.keys(filterParams).forEach(key => {
+        if (filterParams[key] === undefined || filterParams[key] === null || filterParams[key] === '') {
+          delete filterParams[key];
+        }
+      });
+      
+      const response = await user.getAllUsers(pagination.page, pagination.limit, filterParams);
       if (response.success) {
-        setUsers(response.data || []);
+        let filteredData = response.data || [];
+        
+        // Filter client-side để đảm bảo chính xác (backup filter)
+        if (activeTab === 'active') {
+          // Chỉ hiển thị users đang hoạt động và chưa bị xóa
+          filteredData = filteredData.filter(u => u.is_active === 1 && !u.deleted_at);
+        } else if (activeTab === 'locked') {
+          // Chỉ hiển thị users bị khóa và chưa bị xóa
+          filteredData = filteredData.filter(u => u.is_active === 0 && !u.deleted_at);
+        } else if (activeTab === 'deleted') {
+          // Chỉ hiển thị users đã bị xóa mềm
+          filteredData = filteredData.filter(u => u.deleted_at);
+        }
+        
+        setUsers(filteredData);
+        // Cập nhật pagination nếu backend trả về
+        if (response.pagination) {
+          setPagination((prev) => ({
+            ...prev,
+            total: response.pagination.total,
+          }));
+        }
       } else {
         message.error(response.message || 'Có lỗi xảy ra khi tải người dùng');
       }
@@ -75,18 +132,51 @@ const AdminUsers = () => {
     setModalVisible(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleToggleActive = async (id, currentStatus) => {
+    try {
+      const newStatus = !currentStatus;
+      const response = await user.updateUser(id, { is_active: newStatus ? 1 : 0 });
+      if (response.success) {
+        message.success(newStatus ? 'Mở khóa người dùng thành công' : 'Khóa người dùng thành công');
+        loadUsers();
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi cập nhật trạng thái người dùng');
+      }
+    } catch (error) {
+      console.error('Error toggling user active status:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi cập nhật trạng thái người dùng';
+      message.error(errorMessage);
+    }
+  };
+
+  const handleSoftDelete = async (id) => {
     try {
       const response = await user.deleteUser(id);
       if (response.success) {
-        message.success('Xóa người dùng thành công');
+        message.success('Xóa mềm người dùng thành công');
         loadUsers();
       } else {
-        message.error(response.message || 'Có lỗi xảy ra khi xóa người dùng');
+        message.error(response.message || 'Có lỗi xảy ra khi xóa mềm người dùng');
       }
     } catch (error) {
-      console.error('Error deleting user:', error);
-      const errorMessage = error.message || 'Có lỗi xảy ra khi xóa người dùng';
+      console.error('Error soft deleting user:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi xóa mềm người dùng';
+      message.error(errorMessage);
+    }
+  };
+
+  const handleRestore = async (id) => {
+    try {
+      const response = await user.restoreUser(id);
+      if (response.success) {
+        message.success('Khôi phục người dùng thành công');
+        loadUsers();
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi khôi phục người dùng');
+      }
+    } catch (error) {
+      console.error('Error restoring user:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi khôi phục người dùng';
       message.error(errorMessage);
     }
   };
@@ -128,6 +218,34 @@ const AdminUsers = () => {
     }
   };
 
+  // Hàm lấy màu Tag theo role
+  const getRoleColor = (roleId) => {
+    switch (roleId) {
+      case 1:
+        return 'red'; // Admin
+      case 2:
+        return 'blue'; // Shipper
+      case 3:
+        return 'green'; // Customer
+      default:
+        return 'default';
+    }
+  };
+
+  // Hàm lấy tên role để hiển thị
+  const getRoleName = (record) => {
+    if (record.role?.role_name) {
+      return record.role.role_name;
+    }
+    // Fallback nếu không có role object
+    const roleId = record.role_id;
+    const roleObj = roles.find((r) => r.role_id === roleId);
+    if (roleObj) {
+      return roleObj.role_name;
+    }
+    return 'N/A';
+  };
+
   const columns = [
     {
       title: 'ID',
@@ -153,7 +271,16 @@ const AdminUsers = () => {
     {
       title: 'Vai Trò',
       key: 'role',
-      render: (_, record) => record.role?.name || 'N/A',
+      width: 150,
+      render: (_, record) => {
+        const roleId = record.role_id || record.role?.role_id;
+        const roleName = getRoleName(record);
+        return (
+          <Tag color={getRoleColor(roleId)}>
+            {roleName}
+          </Tag>
+        );
+      },
     },
     {
       title: 'Trạng Thái',
@@ -169,30 +296,118 @@ const AdminUsers = () => {
     {
       title: 'Thao Tác',
       key: 'action',
-      width: 150,
-      render: (_, record) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)}>
-            Sửa
-          </Button>
-          <Popconfirm
-            title="Bạn có chắc muốn xóa người dùng này?"
-            onConfirm={() => handleDelete(record.user_id)}
-            okText="Xóa"
-            cancelText="Hủy"
-          >
-            <Button type="primary" danger icon={<DeleteOutlined />} size="small">
-              Xóa
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      width: 300,
+      render: (_, record) => {
+        const isActive = record.is_active;
+        const isDeleted = !!record.deleted_at;
+        
+        return (
+          <Space>
+            {/* Chỉ hiển thị nút Sửa nếu user chưa bị xóa */}
+            {!isDeleted && (
+              <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)}>
+                Sửa
+              </Button>
+            )}
+            {/* Chỉ hiển thị nút Khóa/Mở khóa nếu user chưa bị xóa */}
+            {!isDeleted && (
+              <Popconfirm
+                title={isActive ? "Bạn có chắc muốn khóa người dùng này?" : "Bạn có chắc muốn mở khóa người dùng này?"}
+                onConfirm={() => handleToggleActive(record.user_id, isActive)}
+                okText={isActive ? "Khóa" : "Mở khóa"}
+                cancelText="Hủy"
+              >
+                <Button 
+                  type={isActive ? "default" : "primary"}
+                  danger={isActive}
+                  icon={isActive ? <LockOutlined /> : <UnlockOutlined />} 
+                  size="small"
+                >
+                  {isActive ? "Khóa" : "Mở khóa"}
+                </Button>
+              </Popconfirm>
+            )}
+            {/* Chỉ hiển thị nút Xóa mềm nếu user chưa bị xóa */}
+            {!isDeleted && (
+              <Popconfirm
+                title="Bạn có chắc muốn xóa mềm người dùng này?"
+                description="Người dùng sẽ bị xóa mềm và không thể đăng nhập. Bạn có thể khôi phục sau."
+                onConfirm={() => handleSoftDelete(record.user_id)}
+                okText="Xóa mềm"
+                cancelText="Hủy"
+                okType="danger"
+              >
+                <Button type="primary" danger icon={<DeleteOutlined />} size="small">
+                  Xóa mềm
+                </Button>
+              </Popconfirm>
+            )}
+            {/* Chỉ hiển thị nút Khôi phục nếu user đã bị xóa */}
+            {isDeleted && (
+              <Popconfirm
+                title="Bạn có chắc muốn khôi phục người dùng này?"
+                description="Người dùng sẽ được khôi phục và có thể đăng nhập lại."
+                onConfirm={() => handleRestore(record.user_id)}
+                okText="Khôi phục"
+                cancelText="Hủy"
+              >
+                <Button type="primary" icon={<UndoOutlined />} size="small">
+                  Khôi phục
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
   return (
     <div>
       <Title level={2}>Quản Lý Người Dùng</Title>
+
+      {/* Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          setActiveTab(key);
+          setPagination((prev) => ({ ...prev, page: 1, total: undefined }));
+        }}
+        style={{ marginBottom: 16 }}
+      >
+        <Tabs.TabPane tab="Người Dùng Hoạt Động" key="active">
+          {/* Tab content sẽ được hiển thị bên dưới */}
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="Người Dùng Đã Khóa" key="locked">
+          {/* Tab content sẽ được hiển thị bên dưới */}
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="Người Dùng Đã Xóa" key="deleted">
+          {/* Tab content sẽ được hiển thị bên dưới */}
+        </Tabs.TabPane>
+      </Tabs>
+
+      {/* Bộ lọc */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}>
+          <Select
+            style={{ width: '100%' }}
+            placeholder="Lọc theo vai trò"
+            allowClear
+            value={roleFilter}
+            onChange={(value) => {
+              setRoleFilter(value);
+              // Reset về trang 1 khi filter thay đổi
+              setPagination((prev) => ({ ...prev, page: 1, total: undefined }));
+            }}
+          >
+            {roles.map((role) => (
+              <Select.Option key={role.role_id} value={role.role_id}>
+                {role.role_name}
+              </Select.Option>
+            ))}
+          </Select>
+        </Col>
+      </Row>
 
       <Table
         columns={columns}
@@ -202,6 +417,7 @@ const AdminUsers = () => {
         pagination={{
           current: pagination.page,
           pageSize: pagination.limit,
+          total: pagination.total,
           showSizeChanger: true,
           showTotal: (total) => `Tổng ${total} người dùng`,
           onChange: (page, pageSize) => {

@@ -1,6 +1,5 @@
 const createBaseModel = require('./BaseModel');
 const slugify = require('slugify');
-
 const createCategoryModel = () => {
   const baseModel = createBaseModel({
     tableName: 'categories',
@@ -14,23 +13,15 @@ const createCategoryModel = () => {
       'created_at',
     ],
   });
-
   const findBySlug = async (slug) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`slug\` = ? LIMIT 1`;
     const rows = await baseModel.execute(sql, [slug]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
-
   const findByParent = async (parentId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`parent_id\` = ? ORDER BY \`name\` ASC`;
     return await baseModel.execute(sql, [parentId]);
   };
-
-  /**
-   * Find all categories sorted for tree building
-   * Uses SQL ORDER BY to sort by parent_id (NULL first for root categories) and name
-   * This optimizes tree building by pre-sorting in database
-   */
   const findAllSortedForTree = async () => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` 
       ORDER BY 
@@ -39,10 +30,6 @@ const createCategoryModel = () => {
         \`name\` ASC`;
     return await baseModel.execute(sql, []);
   };
-
-  /**
-   * Generate slug from name
-   */
   const generateSlug = (name) => {
     if (!name || !name.trim()) {
       return '';
@@ -53,48 +40,30 @@ const createCategoryModel = () => {
       locale: 'vi',
     });
   };
-
-  /**
-   * Generate unique slug by checking database
-   */
   const generateUniqueSlug = async (name, excludeId = null) => {
     let baseSlug = generateSlug(name);
-    
     if (!baseSlug) {
       throw new Error('Không thể tạo slug từ tên danh mục');
     }
-
     let slug = baseSlug;
     let counter = 1;
     let isUnique = false;
-
     while (!isUnique) {
       const existing = await findBySlug(slug);
-      
-      // Nếu không tìm thấy hoặc là chính record đang update
       if (!existing || (excludeId && existing.category_id === excludeId)) {
         isUnique = true;
       } else {
         slug = `${baseSlug}-${counter}`;
         counter++;
-        
-        // Giới hạn số lần thử để tránh vòng lặp vô hạn
         if (counter > 1000) {
           throw new Error('Không thể tạo slug duy nhất sau nhiều lần thử');
         }
       }
     }
-
     return slug;
   };
-
-  /**
-   * Override create to auto-generate slug
-   */
   const create = async (data = {}) => {
     console.log('[CategoryModel] 🔧 create() OVERRIDE called with data:', JSON.stringify(data, null, 2));
-    
-    // Auto-generate slug if not provided or empty
     if (!data.slug || !data.slug.trim()) {
       console.log('[CategoryModel] 🔗 Slug not provided, generating from name...');
       if (!data.name || !data.name.trim()) {
@@ -105,7 +74,6 @@ const createCategoryModel = () => {
       console.log('[CategoryModel] ✅ Generated slug:', data.slug);
     } else {
       console.log('[CategoryModel] 🔍 Slug provided, validating uniqueness...');
-      // Validate slug is unique if provided
       const existing = await findBySlug(data.slug);
       if (existing) {
         console.log('[CategoryModel] ❌ Slug already exists');
@@ -113,31 +81,32 @@ const createCategoryModel = () => {
       }
       console.log('[CategoryModel] ✅ Slug is unique');
     }
-
     console.log('[CategoryModel] 💾 Calling baseModel.create() with data:', JSON.stringify(data, null, 2));
     return baseModel.create(data);
   };
-
-  /**
-   * Override update to auto-generate slug if name changed
-   */
   const update = async (id, data = {}) => {
-    // If name is being updated and slug is not provided, regenerate slug
+    // Convert id to number for comparison
+    const categoryId = parseInt(id);
+    
+    // Get current category to check if slug is being changed
+    const currentCategory = await baseModel.findById(id);
+    
     if (data.name && (!data.slug || !data.slug.trim())) {
-      data.slug = await generateUniqueSlug(data.name, id);
+      data.slug = await generateUniqueSlug(data.name, categoryId);
     } else if (data.slug && data.slug.trim()) {
-      // Validate slug is unique (excluding current record)
-      const existing = await findBySlug(data.slug);
-      if (existing && existing.category_id !== id) {
-        throw new Error(`Slug "${data.slug}" đã tồn tại`);
+      // Only check uniqueness if slug is actually being changed
+      const isSlugUnchanged = currentCategory && currentCategory.slug === data.slug;
+      
+      if (!isSlugUnchanged) {
+        const existing = await findBySlug(data.slug);
+        // Compare both as numbers to avoid type mismatch
+        if (existing && parseInt(existing.category_id) !== categoryId) {
+          throw new Error(`Slug "${data.slug}" đã tồn tại`);
+        }
       }
     }
-
     return baseModel.update(id, data);
   };
-
-  // Create return object with explicit method override
-  // IMPORTANT: create and update must come AFTER spread to properly override
   const model = {
     ...baseModel,
     findBySlug,
@@ -146,16 +115,11 @@ const createCategoryModel = () => {
     generateSlug,
     generateUniqueSlug,
   };
-  
-  // Explicitly override create and update methods
   model.create = create;
   model.update = update;
-  
   console.log('[CategoryModel] ✅ Category model initialized with create override');
   console.log('[CategoryModel] create method type:', typeof model.create);
   console.log('[CategoryModel] create method is override:', model.create !== baseModel.create);
-  
   return model;
 };
-
 module.exports = createCategoryModel;

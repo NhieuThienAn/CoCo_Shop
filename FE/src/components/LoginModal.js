@@ -3,6 +3,7 @@ import { Modal, Form, Input, Button, Typography, Alert, Tabs, Row, Col, message 
 import { UserOutlined, LockOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useNavigate } from 'react-router-dom';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -16,6 +17,7 @@ const LoginModal = ({ open, onClose, defaultTab = 'login' }) => {
   const [registerLoading, setRegisterLoading] = useState(false);
   const [loginError, setLoginError] = useState(null);
   const [registerError, setRegisterError] = useState(null);
+  const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -254,6 +256,19 @@ const LoginModal = ({ open, onClose, defaultTab = 'login' }) => {
                         placeholder="Nhập mật khẩu"
                       />
                     </Form.Item>
+                    <Form.Item style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <Button
+                          type="link"
+                          onClick={() => {
+                            setForgotPasswordModalOpen(true);
+                          }}
+                          style={{ padding: 0 }}
+                        >
+                          Quên mật khẩu?
+                        </Button>
+                      </div>
+                    </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit" block loading={loginLoading}>
                         Đăng Nhập
@@ -292,6 +307,15 @@ const LoginModal = ({ open, onClose, defaultTab = 'login' }) => {
           ]}
         />
       </div>
+      
+      <ForgotPasswordModal
+        open={forgotPasswordModalOpen}
+        onClose={() => setForgotPasswordModalOpen(false)}
+        onSuccess={() => {
+          setForgotPasswordModalOpen(false);
+          message.success('Đặt lại mật khẩu thành công! Vui lòng đăng nhập.');
+        }}
+      />
     </Modal>
   );
 };

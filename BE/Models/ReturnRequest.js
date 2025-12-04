@@ -1,5 +1,4 @@
 const createBaseModel = require('./BaseModel');
-
 const createReturnRequestModel = () => {
   const baseModel = createBaseModel({
     tableName: 'returnrequests',
@@ -16,19 +15,15 @@ const createReturnRequestModel = () => {
       'items',
     ],
   });
-
   const findByOrderId = async (orderId) => {
     return baseModel.findAll({ filters: { order_id: orderId }, orderBy: 'requested_at DESC' });
   };
-
   const findByUserId = async (userId) => {
     return baseModel.findAll({ filters: { user_id: userId }, orderBy: 'requested_at DESC' });
   };
-
   const findByStatus = async (status) => {
     return baseModel.findAll({ filters: { status }, orderBy: 'requested_at DESC' });
   };
-
   const processReturn = async (returnId, processedBy, status) => {
     return baseModel.update(returnId, {
       status,
@@ -36,7 +31,6 @@ const createReturnRequestModel = () => {
       processed_at: new Date(),
     });
   };
-
   return {
     ...baseModel,
     findByOrderId,
@@ -45,5 +39,4 @@ const createReturnRequestModel = () => {
     processReturn,
   };
 };
-
 module.exports = createReturnRequestModel;

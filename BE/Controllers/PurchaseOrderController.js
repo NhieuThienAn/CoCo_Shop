@@ -1,21 +1,16 @@
 const createBaseController = require('./BaseController');
 const { purchaseOrder } = require('../Models');
-
 const createPurchaseOrderController = () => {
   const baseController = createBaseController(purchaseOrder);
-
   const getByPoNumber = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] getByPoNumber function called');
     console.log('[PurchaseOrderController] Request IP:', req.ip);
     console.log('[PurchaseOrderController] Params:', req.params);
-    
     try {
       const { poNumber } = req.params;
       console.log('[PurchaseOrderController] 🔍 Finding purchase order by PO number:', poNumber);
-      
       const data = await purchaseOrder.findByPoNumber(poNumber);
-
       if (!data) {
         console.log('[PurchaseOrderController] ❌ Purchase order not found');
         return res.status(404).json({
@@ -23,10 +18,8 @@ const createPurchaseOrderController = () => {
           message: 'Không tìm thấy đơn mua hàng',
         });
       }
-
       console.log('[PurchaseOrderController] ✅ Purchase order found:', data.purchase_order_id);
       console.log('========================================');
-
       return res.status(200).json({
         success: true,
         data,
@@ -36,7 +29,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(500).json({
         success: false,
         message: 'Lỗi khi lấy dữ liệu',
@@ -44,21 +36,17 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
   const getBySupplier = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] getBySupplier function called');
     console.log('[PurchaseOrderController] Request IP:', req.ip);
     console.log('[PurchaseOrderController] Params:', req.params);
-    
     try {
       const { supplierId } = req.params;
       console.log('[PurchaseOrderController] 🔍 Fetching purchase orders for supplierId:', supplierId);
-      
       const data = await purchaseOrder.findBySupplierId(supplierId);
       console.log('[PurchaseOrderController] ✅ Purchase orders fetched:', data?.length || 0);
       console.log('========================================');
-
       return res.status(200).json({
         success: true,
         data,
@@ -68,7 +56,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(500).json({
         success: false,
         message: 'Lỗi khi lấy dữ liệu',
@@ -76,34 +63,27 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
   const getByApprovalStatus = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] getByApprovalStatus function called');
     console.log('[PurchaseOrderController] Request IP:', req.ip);
     console.log('[PurchaseOrderController] Params:', req.params);
     console.log('[PurchaseOrderController] Query params:', JSON.stringify(req.query, null, 2));
-    
     try {
       const { status } = req.params;
-      const { supplier_id } = req.query; // Support filtering by supplier_id
+      const { supplier_id } = req.query;
       console.log('[PurchaseOrderController] 🔍 Fetching purchase orders by approval status:', status);
       console.log('[PurchaseOrderController] Supplier filter:', supplier_id);
-      
-      // Build filters
       const filters = { approval_status: status };
       if (supplier_id !== undefined) {
         if (supplier_id === 'null' || supplier_id === null) {
-          filters.supplier_id = null; // Stock receipts
+          filters.supplier_id = null; 
         } else {
           filters.supplier_id = parseInt(supplier_id);
         }
       }
-
-      // Build SQL with special handling for NULL
       let whereClause = '';
       let whereValues = [];
-      
       const filterKeys = Object.keys(filters);
       if (filterKeys.length > 0) {
         const fragments = [];
@@ -117,24 +97,18 @@ const createPurchaseOrderController = () => {
         });
         whereClause = 'WHERE ' + fragments.join(' AND ');
       }
-
       const sql = `
         SELECT * FROM \`${purchaseOrder.tableName}\`
         ${whereClause}
         ORDER BY created_at DESC
       `;
-
       console.log('[PurchaseOrderController] SQL:', sql.substring(0, 200));
       console.log('[PurchaseOrderController] SQL params:', whereValues);
-
       const data = await purchaseOrder.execute(sql, whereValues);
-      
-      // Use SQL COUNT instead of JavaScript filter
       const db = require('../Config/database').getDatabase();
       const stockReceiptsCountQuery = `SELECT COUNT(*) as count FROM \`purchaseorders\` WHERE \`supplier_id\` IS NULL`;
       const [stockReceiptsCountRows] = await db.execute(stockReceiptsCountQuery);
       const stockReceiptsCount = stockReceiptsCountRows?.[0]?.count || 0;
-      
       console.log('[PurchaseOrderController] ✅ Purchase orders fetched:', {
         count: data?.length || 0,
         status,
@@ -142,7 +116,6 @@ const createPurchaseOrderController = () => {
         stock_receipts_count: stockReceiptsCount,
       });
       console.log('========================================');
-
       return res.status(200).json({
         success: true,
         data,
@@ -152,7 +125,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(500).json({
         success: false,
         message: 'Lỗi khi lấy dữ liệu',
@@ -160,19 +132,16 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
   const approve = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] approve function called');
     console.log('[PurchaseOrderController] Request IP:', req.ip);
     console.log('[PurchaseOrderController] Params:', req.params);
     console.log('[PurchaseOrderController] Request body:', JSON.stringify(req.body, null, 2));
-    
     try {
       const { id } = req.params;
       const approvedBy = req.user?.userId || req.user?.user_id || req.body.approvedBy;
       console.log('[PurchaseOrderController] Approving purchase order:', { purchaseOrderId: id, approvedBy });
-
       if (!approvedBy) {
         console.log('[PurchaseOrderController] ❌ Validation failed: Missing approvedBy');
         return res.status(400).json({
@@ -180,8 +149,6 @@ const createPurchaseOrderController = () => {
           message: 'Vui lòng đăng nhập để duyệt',
         });
       }
-
-      // Get purchase order
       const po = await purchaseOrder.findById(id);
       if (!po) {
         console.log('[PurchaseOrderController] ❌ Purchase order not found');
@@ -190,7 +157,6 @@ const createPurchaseOrderController = () => {
           message: 'Không tìm thấy đơn mua hàng',
         });
       }
-
       if (po.approval_status !== 'pending') {
         console.log('[PurchaseOrderController] ❌ PO already processed:', po.approval_status);
         return res.status(400).json({
@@ -198,13 +164,9 @@ const createPurchaseOrderController = () => {
           message: `Đơn mua hàng đã được xử lý (${po.approval_status})`,
         });
       }
-
-      // If supplier_id is NULL, this is a stock receipt - update inventory
       if (po.supplier_id === null || po.supplier_id === undefined) {
         console.log('[PurchaseOrderController] 📦 This is a stock receipt (supplier_id is NULL)');
         console.log('[PurchaseOrderController] 📦 Processing items for stock update...');
-        
-        // Parse items
         let items = [];
         try {
           items = typeof po.items === 'string' 
@@ -220,18 +182,11 @@ const createPurchaseOrderController = () => {
             message: 'Dữ liệu sản phẩm không hợp lệ',
           });
         }
-
         console.log('[PurchaseOrderController] Items count:', items.length);
-
-        // Update stock for each item using batch operations (single SQL queries instead of N queries)
         const { product, inventoryTransaction } = require('../Models');
-        
-        // Batch verify all products exist using SQL WHERE IN (single query instead of N queries)
         const productIds = items.map(item => item.product_id).filter(Boolean);
         const productMap = await product.findByProductIdsAsMap(productIds);
         console.log(`[PurchaseOrderController] 🔍 Batch verified ${Object.keys(productMap).length} products for ${items.length} items`);
-
-        // Verify all products exist before processing
         const missingProducts = productIds.filter(id => !productMap[id]);
         if (missingProducts.length > 0) {
           console.log('[PurchaseOrderController] ❌ Some products not found:', missingProducts);
@@ -240,14 +195,10 @@ const createPurchaseOrderController = () => {
             message: `Không tìm thấy sản phẩm với ID: ${missingProducts.join(', ')}`,
           });
         }
-
-        // Prepare batch updates for stock (single SQL UPDATE with CASE WHEN)
         const stockUpdates = items.map(item => ({
           product_id: item.product_id,
           quantity_change: parseInt(item.quantity || 0)
         }));
-
-        // Prepare batch transactions for inventory (single SQL INSERT with multiple VALUES)
         const inventoryTransactions = items.map(item => ({
           product_id: item.product_id,
           quantity_change: parseInt(item.quantity || 0),
@@ -255,32 +206,24 @@ const createPurchaseOrderController = () => {
           note: `Phiếu nhập kho ${po.po_number}`,
           created_by: approvedBy
         }));
-
-        // Execute batch operations (2 SQL queries instead of 2N queries)
         console.log('[PurchaseOrderController] 📈 Batch updating stock for', stockUpdates.length, 'products...');
         await product.batchUpdateStock(stockUpdates);
         console.log('[PurchaseOrderController] ✅ Stock updated for all products');
-
         console.log('[PurchaseOrderController] 📝 Batch recording inventory transactions for', inventoryTransactions.length, 'items...');
         await inventoryTransaction.batchRecordTransactions(inventoryTransactions);
         console.log('[PurchaseOrderController] ✅ Inventory transactions recorded for all items');
       } else {
         console.log('[PurchaseOrderController] 📋 This is a purchase order from supplier:', po.supplier_id);
-        // For purchase orders from suppliers, we don't automatically update inventory
-        // Inventory will be updated when goods are received separately
       }
-
       console.log('[PurchaseOrderController] ✅ Approving purchase order...');
       await purchaseOrder.approve(id, approvedBy);
       const updated = await purchaseOrder.findById(id);
       console.log('[PurchaseOrderController] ✅✅✅ PURCHASE ORDER APPROVED SUCCESSFULLY ✅✅✅');
       console.log('[PurchaseOrderController] Updated approval status:', updated?.approval_status);
       console.log('========================================');
-
       const message = po.supplier_id === null || po.supplier_id === undefined
         ? 'Duyệt phiếu nhập kho thành công. Đã cập nhật tồn kho.'
         : 'Duyệt đơn mua hàng thành công';
-
       return res.status(200).json({
         success: true,
         message,
@@ -291,7 +234,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(400).json({
         success: false,
         message: 'Lỗi khi duyệt',
@@ -299,7 +241,6 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
   const reject = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] reject function called');
@@ -309,7 +250,6 @@ const createPurchaseOrderController = () => {
       ...req.body,
       rejectionReason: req.body.rejectionReason ? req.body.rejectionReason.substring(0, 100) + '...' : undefined
     }, null, 2));
-    
     try {
       const { id } = req.params;
       const { approvedBy, rejectionReason } = req.body;
@@ -318,7 +258,6 @@ const createPurchaseOrderController = () => {
         approvedBy,
         hasRejectionReason: !!rejectionReason
       });
-
       if (!approvedBy || !rejectionReason) {
         console.log('[PurchaseOrderController] ❌ Validation failed: Missing required fields');
         return res.status(400).json({
@@ -326,14 +265,12 @@ const createPurchaseOrderController = () => {
           message: 'Vui lòng cung cấp đầy đủ thông tin',
         });
       }
-
       console.log('[PurchaseOrderController] ❌ Rejecting purchase order...');
       await purchaseOrder.reject(id, approvedBy, rejectionReason);
       const updated = await purchaseOrder.findById(id);
       console.log('[PurchaseOrderController] ✅✅✅ PURCHASE ORDER REJECTED SUCCESSFULLY ✅✅✅');
       console.log('[PurchaseOrderController] Updated approval status:', updated?.approval_status);
       console.log('========================================');
-
       return res.status(200).json({
         success: true,
         message: 'Từ chối đơn mua hàng thành công',
@@ -344,7 +281,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(400).json({
         success: false,
         message: 'Lỗi khi từ chối',
@@ -352,57 +288,38 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
-  /**
-   * Override getAll to support filtering stock receipts (supplier_id = NULL)
-   */
   const getAll = async (req, res) => {
     console.log('========================================');
     console.log('[PurchaseOrderController] getAll function called (override)');
     console.log('[PurchaseOrderController] Request IP:', req.ip);
     console.log('[PurchaseOrderController] Query params:', JSON.stringify(req.query, null, 2));
-    
     try {
       const { page = 1, limit = 10, supplier_id, ...otherFilters } = req.query;
       const offset = (parseInt(page) - 1) * parseInt(limit);
-
-      // Validate pagination params
       const pageNum = Math.max(1, parseInt(page) || 1);
       const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
-
       console.log('[PurchaseOrderController] Pagination:', { pageNum, limitNum, offset });
       console.log('[PurchaseOrderController] Filters:', { supplier_id, ...otherFilters });
-
-      // Build filters - handle supplier_id = null specially
       const filters = { ...otherFilters };
       if (supplier_id !== undefined) {
         if (supplier_id === 'null' || supplier_id === null) {
-          // Filter for stock receipts (supplier_id IS NULL)
           filters.supplier_id = null;
         } else {
           filters.supplier_id = parseInt(supplier_id);
         }
       }
-
       console.log('[PurchaseOrderController] 🔍 Fetching purchase orders from database...');
       console.log('[PurchaseOrderController] Final filters:', filters);
-
-      // Use single SQL query with window function COUNT(*) OVER() to get data and total count
-      // This replaces Promise.all with 2 separate queries (execute + execute countSql)
-      // Note: findAllWithCount handles NULL values correctly via BaseModel.buildWhereClause
       const { data, total } = await purchaseOrder.findAllWithCount({
         filters,
         limit: limitNum,
         offset,
         orderBy: 'created_at DESC',
       });
-
-      // Use SQL COUNT instead of JavaScript filter
       const db = require('../Config/database').getDatabase();
       const stockReceiptsCountQuery = `SELECT COUNT(*) as count FROM \`purchaseorders\` WHERE \`supplier_id\` IS NULL`;
       const [stockReceiptsCountRows] = await db.execute(stockReceiptsCountQuery);
       const stockReceiptsCount = stockReceiptsCountRows?.[0]?.count || 0;
-
       console.log('[PurchaseOrderController] ✅ Purchase orders fetched:', {
         count: data?.length || 0,
         total,
@@ -412,7 +329,6 @@ const createPurchaseOrderController = () => {
         stock_receipts_count: stockReceiptsCount,
       });
       console.log('========================================');
-
       return res.status(200).json({
         success: true,
         data,
@@ -428,7 +344,6 @@ const createPurchaseOrderController = () => {
       console.error('[PurchaseOrderController] Error message:', error.message);
       console.error('[PurchaseOrderController] Error stack:', error.stack);
       console.log('========================================');
-      
       return res.status(500).json({
         success: false,
         message: 'Lỗi khi lấy dữ liệu',
@@ -436,10 +351,9 @@ const createPurchaseOrderController = () => {
       });
     }
   };
-
   return {
     ...baseController,
-    getAll, // Override base getAll
+    getAll,
     getByPoNumber,
     getBySupplier,
     getByApprovalStatus,
@@ -447,5 +361,4 @@ const createPurchaseOrderController = () => {
     reject,
   };
 };
-
 module.exports = createPurchaseOrderController();

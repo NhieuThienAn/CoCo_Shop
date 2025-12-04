@@ -3,7 +3,6 @@ import { Outlet, useNavigate, Link, useLocation, useSearchParams } from 'react-r
 import {
   Layout,
   Menu,
-  Badge,
   Avatar,
   Dropdown,
   Button,
@@ -29,7 +28,8 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext.js';
-import { cart, wishlist, category } from '../api/index.js';
+import { useCart } from '../contexts/CartContext.js';
+import { wishlist, category } from '../api/index.js';
 import LoginModal from '../components/LoginModal.js';
 import RegisterOTPModal from '../components/RegisterOTPModal.js';
 import './CustomerLayout.scss';
@@ -73,60 +73,75 @@ const CustomerLayout = () => {
       window.removeEventListener('openRegisterOTPModal', handleOpenRegisterOTPModal);
     };
   }, []);
-  const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
   const [categories, setCategories] = useState([]);
   const [searchValue, setSearchValue] = useState('');
   const { user, logout } = useAuth();
+  const { getCartCount, cartItems } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [, forceUpdate] = useState(0); // Force re-render trigger
+
+  // Calculate cart count directly from cartItems to ensure immediate updates
+  // This ensures the count updates instantly when cartItems changes
+  const cartCount = React.useMemo(() => {
+    const count = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    console.log('[CustomerLayout] Cart count calculated:', count, 'from', cartItems.length, 'items');
+    return count;
+  }, [cartItems]);
+  
+  // Also listen to getCartCount from context as a fallback
+  const contextCartCount = getCartCount;
 
   useEffect(() => {
     if (user) {
-      loadCartCount();
       loadWishlistCount();
     } else {
-      setCartCount(0);
       setWishlistCount(0);
     }
     loadCategories();
   }, [user, location.pathname]);
 
-  // Refresh cart count when login modal closes (in case user just logged in)
+  // Refresh wishlist count when login modal closes (in case user just logged in)
   useEffect(() => {
     if (!loginModalOpen && user) {
-      loadCartCount();
       loadWishlistCount();
     }
   }, [loginModalOpen, user]);
 
-  const loadCartCount = useCallback(async () => {
-    try {
-      const response = await cart.getCart();
-      if (response.success && response.data) {
-        const items = response.data.items || [];
-        const count = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-        setCartCount(count);
-      }
-    } catch (error) {
-      setCartCount(0);
-    }
-  }, []);
-
-  // Listen for cart update events from other components
+  // Listen for cart updates to ensure header badge updates immediately
   useEffect(() => {
-    const handleCartUpdate = () => {
-      if (user) {
-        loadCartCount();
+    const handleCartUpdated = (event) => {
+      // event.detail might be null if dispatched from other components without detail
+      // That's okay - we just need to trigger a re-render
+      if (event.detail) {
+        console.log('[CustomerLayout] Cart updated event received:', event.detail);
+        const expectedCount = event.detail.newCount || event.detail.count;
+        console.log('[CustomerLayout] Expected count from event:', expectedCount);
+      } else {
+        console.log('[CustomerLayout] Cart updated event received (no detail)');
       }
+      // Force a re-render immediately to ensure cartCount badge updates
+      // This will cause cartCount to be recalculated from the updated cartItems in context
+      // The cartItems from context will already be updated due to flushSync
+      forceUpdate(prev => prev + 1);
     };
 
-    window.addEventListener('cartUpdated', handleCartUpdate);
+    window.addEventListener('cartUpdated', handleCartUpdated);
     return () => {
-      window.removeEventListener('cartUpdated', handleCartUpdate);
+      window.removeEventListener('cartUpdated', handleCartUpdated);
     };
-  }, [user, loadCartCount]);
+  }, []); // Only set up listener once - cartItems will be updated via context
+  
+  // Log cartItems changes for debugging (only log when actually changed to reduce noise)
+  useEffect(() => {
+    // Only log if there are items or if count changed significantly
+    if (cartItems.length > 0 || cartCount > 0) {
+      console.log('[CustomerLayout] Cart items changed:', cartItems.length, 'items');
+      console.log('[CustomerLayout] Cart count:', cartCount);
+    }
+  }, [cartItems.length, cartCount]); // Only depend on length and count, not the full array
 
   const loadWishlistCount = async () => {
     try {
@@ -154,7 +169,6 @@ const CustomerLayout = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/');
-    setCartCount(0);
     setWishlistCount(0);
   };
 
@@ -196,11 +210,7 @@ const CustomerLayout = () => {
         {
           key: 'wishlist',
           icon: <HeartOutlined />,
-          label: (
-            <Link to="/wishlist">
-              Yêu Thích {wishlistCount > 0 && <Badge count={wishlistCount} size="small" />}
-            </Link>
-          ),
+          label: <Link to="/wishlist">Yêu Thích</Link>,
         },
         {
           type: 'divider',
@@ -284,27 +294,23 @@ const CustomerLayout = () => {
 
             {/* Cart */}
             <Link to="/cart">
-              <Badge count={cartCount} showZero={false} offset={[-2, 2]}>
-                <Button 
-                  type="text" 
-                  icon={<ShoppingCartOutlined />} 
-                  size="large"
-                  style={{ fontSize: '18px' }}
-                />
-              </Badge>
+              <Button 
+                type="text" 
+                icon={<ShoppingCartOutlined />} 
+                size="large"
+                style={{ fontSize: '18px' }}
+              />
             </Link>
 
             {/* Wishlist */}
             {user && (
               <Link to="/wishlist">
-                <Badge count={wishlistCount} showZero={false} offset={[-2, 2]}>
-                  <Button 
-                    type="text" 
-                    icon={<HeartOutlined />} 
-                    size="large"
-                    style={{ fontSize: '18px' }}
-                  />
-                </Badge>
+                <Button 
+                  type="text" 
+                  icon={<HeartOutlined />} 
+                  size="large"
+                  style={{ fontSize: '18px' }}
+                />
               </Link>
             )}
 
@@ -532,11 +538,7 @@ const CustomerLayout = () => {
                 {
                   key: 'wishlist',
                   icon: <HeartOutlined />,
-                  label: (
-                    <Link to="/wishlist">
-                      Yêu Thích {wishlistCount > 0 && <Badge count={wishlistCount} size="small" />}
-                    </Link>
-                  ),
+                  label: <Link to="/wishlist">Yêu Thích</Link>,
                 },
               ]}
               style={{ border: 'none' }}

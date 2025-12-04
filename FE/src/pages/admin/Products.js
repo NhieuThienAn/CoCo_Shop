@@ -21,10 +21,10 @@ import {
   Upload,
   Select,
   Collapse,
+  Tabs,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined, FilterOutlined, ClearOutlined } from '@ant-design/icons';
-import { product, category, support } from '../../api/index.js';
-import { numberFormatter, numberParser, integerFormatter, integerParser } from '../../utils/numberFormatter.js';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined, FilterOutlined, ClearOutlined, UndoOutlined, EyeOutlined } from '@ant-design/icons';
+import { product, category } from '../../api/index.js';
 import './Products.scss';
 
 const { Title } = Typography;
@@ -42,14 +42,20 @@ const AdminProducts = () => {
   const [duplicateImages, setDuplicateImages] = useState([]);
   const [duplicateImagePreviewUrls, setDuplicateImagePreviewUrls] = useState({});
   
+  // Tab state - 'active' for active products, 'deleted' for deleted products
+  const [activeTab, setActiveTab] = useState('active');
+  
+  // Product detail modal state
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [productDetail, setProductDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  
   // Filter states
   const [filters, setFilters] = useState({
     category_id: undefined,
-    brand: undefined,
     is_active: undefined,
   });
   const [categories, setCategories] = useState([]);
-  const [brands, setBrands] = useState([]);
   const [filterLoading, setFilterLoading] = useState(false);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
@@ -59,22 +65,19 @@ const AdminProducts = () => {
 
   useEffect(() => {
     loadProducts();
-  }, [pagination.page, searchText, filters]);
+  }, [pagination.page, searchText, filters, activeTab]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     if (pagination.page !== 1) {
       setPagination((prev) => ({ ...prev, page: 1 }));
     }
-  }, [filters.category_id, filters.brand, filters.is_active]);
+  }, [filters.category_id, filters.is_active]);
 
   const loadFilterData = async () => {
     setFilterLoading(true);
     try {
-      const [categoriesRes, brandsRes] = await Promise.all([
-        category.getCategoryTree(),
-        support.getBrands(),
-      ]);
+      const categoriesRes = await category.getCategoryTree();
 
       if (categoriesRes.success) {
         // Flatten category tree for select
@@ -90,14 +93,6 @@ const AdminProducts = () => {
         };
         setCategories(flattenCategories(categoriesRes.data || []));
       }
-
-      if (brandsRes.success) {
-        const brandsList = (brandsRes.data || []).map(b => ({
-          value: b,
-          label: b,
-        }));
-        setBrands(brandsList);
-      }
     } catch (error) {
       console.error('Error loading filter data:', error);
     } finally {
@@ -110,6 +105,7 @@ const AdminProducts = () => {
       page: pagination.page,
       limit: pagination.limit,
       searchText,
+      activeTab,
     });
     
     setLoading(true);
@@ -118,14 +114,32 @@ const AdminProducts = () => {
       if (searchText) {
         console.log('[AdminProducts] Searching products with text:', searchText);
         response = await product.searchProducts(searchText, pagination.page, pagination.limit);
+        // Filter search results by tab
+        if (response.success && response.data) {
+          if (activeTab === 'active') {
+            response.data = response.data.filter(p => !p.deleted_at);
+          } else if (activeTab === 'deleted') {
+            response.data = response.data.filter(p => p.deleted_at);
+          }
+        }
       } else {
-        // For admin, we need to see ALL products including inactive and deleted
-        console.log('[AdminProducts] Loading all products (admin mode)');
+        // Load products based on active tab
+        console.log('[AdminProducts] Loading products for tab:', activeTab);
         const filterParams = {
-          includeDeleted: true,
           includeInactive: true,
           ...filters,
         };
+        
+        if (activeTab === 'active') {
+          // Only active products (not deleted)
+          filterParams.includeDeleted = false;
+        } else if (activeTab === 'deleted') {
+          // Only deleted products
+          filterParams.includeDeleted = true;
+          // We need to filter to only show deleted products
+          // The API will return all products when includeDeleted=true, so we'll filter client-side
+        }
+        
         // Remove undefined values
         Object.keys(filterParams).forEach(key => {
           if (filterParams[key] === undefined || filterParams[key] === null || filterParams[key] === '') {
@@ -133,6 +147,19 @@ const AdminProducts = () => {
           }
         });
         response = await product.getProducts(pagination.page, pagination.limit, filterParams);
+        
+        // Filter deleted products if on deleted tab
+        if (activeTab === 'deleted' && response.success && response.data) {
+          response.data = response.data.filter(p => p.deleted_at);
+          // Update total count for deleted products
+          if (response.pagination) {
+            // We need to get the actual count, but for now we'll use the filtered length
+            // In a real scenario, you might want a separate API endpoint for deleted products count
+          }
+        } else if (activeTab === 'active' && response.success && response.data) {
+          // Ensure no deleted products in active tab
+          response.data = response.data.filter(p => !p.deleted_at);
+        }
       }
       
       console.log('[AdminProducts] API response:', {
@@ -193,6 +220,44 @@ const AdminProducts = () => {
       console.error('Error deleting product:', error);
       const errorMessage = error.message || 'Có lỗi xảy ra khi xóa sản phẩm';
       message.error(errorMessage);
+    }
+  };
+
+  const handleRestore = async (id) => {
+    try {
+      const response = await product.restoreProduct(id);
+      if (response.success) {
+        message.success('Khôi phục sản phẩm thành công');
+        loadProducts();
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi khôi phục sản phẩm');
+      }
+    } catch (error) {
+      console.error('Error restoring product:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi khôi phục sản phẩm';
+      message.error(errorMessage);
+    }
+  };
+
+  const handleViewDetail = async (id) => {
+    setDetailModalVisible(true);
+    setDetailLoading(true);
+    setProductDetail(null);
+    try {
+      const response = await product.getProductById(id);
+      if (response.success) {
+        setProductDetail(response.data);
+      } else {
+        message.error(response.message || 'Có lỗi xảy ra khi tải chi tiết sản phẩm');
+        setDetailModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error loading product detail:', error);
+      const errorMessage = error.message || 'Có lỗi xảy ra khi tải chi tiết sản phẩm';
+      message.error(errorMessage);
+      setDetailModalVisible(false);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -486,12 +551,33 @@ const AdminProducts = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <Title level={2} style={{ margin: 0 }}>Quản Lý Sản Phẩm</Title>
-        <Link to="/admin/products/new">
-          <Button type="primary" icon={<PlusOutlined />}>
-            Thêm Sản Phẩm
-          </Button>
-        </Link>
+        {activeTab === 'active' && (
+          <Link to="/admin/products/new">
+            <Button type="primary" icon={<PlusOutlined />}>
+              Thêm Sản Phẩm
+            </Button>
+          </Link>
+        )}
       </div>
+
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          setActiveTab(key);
+          setPagination((prev) => ({ ...prev, page: 1 }));
+        }}
+        items={[
+          {
+            key: 'active',
+            label: 'Sản phẩm hoạt động',
+          },
+          {
+            key: 'deleted',
+            label: 'Sản phẩm đã xóa',
+          },
+        ]}
+        style={{ marginBottom: '24px' }}
+      />
 
       <div className="admin-products-header">
         <div className="admin-products-search">
@@ -541,24 +627,6 @@ const AdminProducts = () => {
               </Col>
               <Col xs={24} sm={12} md={8} lg={6}>
                 <div className="filter-item">
-                  <label>Thương hiệu</label>
-                  <Select
-                    placeholder="Tất cả thương hiệu"
-                    allowClear
-                    style={{ width: '100%' }}
-                    value={filters.brand}
-                    onChange={(value) => setFilters({ ...filters, brand: value })}
-                    options={brands}
-                    loading={filterLoading}
-                    showSearch
-                    filterOption={(input, option) =>
-                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div className="filter-item">
                   <label>Trạng thái</label>
                   <Select
                     placeholder="Tất cả trạng thái"
@@ -580,7 +648,6 @@ const AdminProducts = () => {
                     onClick={() => {
                       setFilters({
                         category_id: undefined,
-                        brand: undefined,
                         is_active: undefined,
                       });
                       setPagination((prev) => ({ ...prev, page: 1 }));
@@ -614,6 +681,8 @@ const AdminProducts = () => {
                     <Card
                       hoverable
                       className="admin-product-card"
+                      onClick={() => handleViewDetail(productId)}
+                      style={{ cursor: 'pointer' }}
                       cover={
                         <div className="admin-product-image-wrapper">
                           <AntdImage
@@ -638,40 +707,86 @@ const AdminProducts = () => {
                         </div>
                       }
                       actions={[
-                        <Link key="edit" to={`/admin/products/${productId}`}>
-                          <Button type="link" icon={<EditOutlined />} size="small">
-                            Sửa
+                        // Only show edit button for active products
+                        !record.deleted_at && (
+                          <Link 
+                            key="edit" 
+                            to={`/admin/products/${productId}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button type="link" icon={<EditOutlined />} size="small">
+                              Sửa
+                            </Button>
+                          </Link>
+                        ),
+                        // Only show duplicate button for active products
+                        !record.deleted_at && (
+                          <Button
+                            key="duplicate"
+                            type="link"
+                            icon={<CopyOutlined />}
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicate(record);
+                            }}
+                          >
+                            Nhân đôi
                           </Button>
-                        </Link>,
-                        <Button
-                          key="duplicate"
-                          type="link"
-                          icon={<CopyOutlined />}
-                          size="small"
-                          onClick={() => handleDuplicate(record)}
-                        >
-                          Nhân đôi
-                        </Button>,
-                        <Popconfirm
-                          key="delete"
-                          title="Bạn có chắc muốn xóa sản phẩm này?"
-                          onConfirm={() => handleDelete(productId)}
-                          okText="Xóa"
-                          cancelText="Hủy"
-                        >
-                          <Button type="link" danger icon={<DeleteOutlined />} size="small">
-                            Xóa
-                          </Button>
-                        </Popconfirm>,
-                      ]}
+                        ),
+                        // Show delete button only for active products
+                        !record.deleted_at && (
+                          <Popconfirm
+                            key="delete"
+                            title="Bạn có chắc muốn xóa sản phẩm này?"
+                            onConfirm={(e) => {
+                              e?.stopPropagation();
+                              handleDelete(productId);
+                            }}
+                            okText="Xóa"
+                            cancelText="Hủy"
+                          >
+                            <Button 
+                              type="link" 
+                              danger 
+                              icon={<DeleteOutlined />} 
+                              size="small"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Xóa
+                            </Button>
+                          </Popconfirm>
+                        ),
+                        // Show restore button only for deleted products
+                        record.deleted_at && (
+                          <Popconfirm
+                            key="restore"
+                            title="Bạn có chắc muốn khôi phục sản phẩm này?"
+                            onConfirm={(e) => {
+                              e?.stopPropagation();
+                              handleRestore(productId);
+                            }}
+                            okText="Khôi phục"
+                            cancelText="Hủy"
+                          >
+                            <Button 
+                              type="link" 
+                              icon={<UndoOutlined />} 
+                              size="small" 
+                              style={{ color: '#52c41a' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Khôi phục
+                            </Button>
+                          </Popconfirm>
+                        ),
+                      ].filter(Boolean)}
                     >
-                      <div className="admin-product-info">
+                        <div className="admin-product-info">
                         <div className="admin-product-id">ID: {productId}</div>
-                        <Link to={`/admin/products/${productId}`}>
-                          <Typography.Title level={5} className="admin-product-name" ellipsis={{ rows: 2 }}>
-                            {record.name}
-                          </Typography.Title>
-                        </Link>
+                        <Typography.Title level={5} className="admin-product-name" ellipsis={{ rows: 2 }}>
+                          {record.name}
+                        </Typography.Title>
                         <div className="admin-product-price">{formattedPrice}</div>
                         <div className="admin-product-meta">
                           <Space size="small">
@@ -756,8 +871,7 @@ const AdminProducts = () => {
               min={0}
               style={{ width: '100%' }}
               placeholder="Nhập giá mới"
-              formatter={numberFormatter}
-              parser={numberParser}
+              controls={false}
             />
           </Form.Item>
           
@@ -769,8 +883,7 @@ const AdminProducts = () => {
               min={0}
               style={{ width: '100%' }}
               placeholder="Nhập thể tích mới"
-              formatter={integerFormatter}
-              parser={integerParser}
+              controls={false}
             />
           </Form.Item>
 
@@ -885,6 +998,302 @@ const AdminProducts = () => {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Product Detail Modal */}
+      <Modal
+        title="Chi Tiết Sản Phẩm"
+        open={detailModalVisible}
+        onCancel={() => {
+          setDetailModalVisible(false);
+          setProductDetail(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setDetailModalVisible(false);
+            setProductDetail(null);
+          }}>
+            Đóng
+          </Button>,
+        ]}
+        width={900}
+      >
+        <Spin spinning={detailLoading}>
+          {productDetail && (
+            <div>
+              <Row gutter={[24, 24]}>
+                {/* Images Section */}
+                <Col xs={24} md={12}>
+                  <div style={{ marginBottom: '24px' }}>
+                    <Title level={5}>Hình Ảnh Sản Phẩm</Title>
+                    {productDetail.images && Array.isArray(productDetail.images) && productDetail.images.length > 0 ? (
+                      <div>
+                        <AntdImage
+                          src={productDetail.primary_image || productDetail.images[0]?.url || '/placeholder.jpg'}
+                          alt={productDetail.name}
+                          style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', marginBottom: '16px' }}
+                          preview={{
+                            src: productDetail.primary_image || productDetail.images[0]?.url,
+                          }}
+                        />
+                        {productDetail.images.length > 1 && (
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {productDetail.images.map((img, index) => (
+                              <AntdImage
+                                key={index}
+                                src={img.url || '/placeholder.jpg'}
+                                alt={img.alt || `Image ${index + 1}`}
+                                width={80}
+                                height={80}
+                                style={{ objectFit: 'cover', borderRadius: '4px' }}
+                                preview={{
+                                  src: img.url,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <Empty description="Chưa có hình ảnh" />
+                    )}
+                  </div>
+                </Col>
+
+                {/* Basic Info Section */}
+                <Col xs={24} md={12}>
+                  <div style={{ marginBottom: '24px' }}>
+                    <Title level={5}>Thông Tin Cơ Bản</Title>
+                    <Row gutter={[16, 16]}>
+                      <Col span={24}>
+                        <div><strong>ID:</strong> {productDetail.id || productDetail.product_id}</div>
+                      </Col>
+                      <Col span={24}>
+                        <div><strong>Tên sản phẩm:</strong> {productDetail.name || 'N/A'}</div>
+                      </Col>
+                      <Col span={24}>
+                        <div><strong>Slug:</strong> {productDetail.slug || 'N/A'}</div>
+                      </Col>
+                      <Col span={24}>
+                        <div><strong>SKU:</strong> {productDetail.sku || 'N/A'}</div>
+                      </Col>
+                      <Col span={24}>
+                        <div><strong>Mã vạch:</strong> {productDetail.barcode || 'N/A'}</div>
+                      </Col>
+                      <Col span={24}>
+                        <div>
+                          <strong>Trạng thái:</strong>{' '}
+                          <Tag color={productDetail.is_active ? 'green' : 'red'}>
+                            {productDetail.is_active ? 'Hoạt động' : 'Ngừng hoạt động'}
+                          </Tag>
+                          {productDetail.deleted_at && (
+                            <Tag color="orange" style={{ marginLeft: '8px' }}>Đã xóa</Tag>
+                          )}
+                        </div>
+                      </Col>
+                    </Row>
+                  </div>
+
+                  <div style={{ marginBottom: '24px' }}>
+                    <Title level={5}>Giá và Tồn Kho</Title>
+                    <Row gutter={[16, 16]}>
+                      <Col span={24}>
+                        <div>
+                          <strong>Giá bán:</strong>{' '}
+                          {new Intl.NumberFormat('vi-VN', {
+                            style: 'currency',
+                            currency: 'VND',
+                          }).format(productDetail.price || 0)}
+                        </div>
+                      </Col>
+                      {productDetail.msrp && (
+                        <Col span={24}>
+                          <div>
+                            <strong>Giá niêm yết:</strong>{' '}
+                            <span style={{ textDecoration: 'line-through', color: '#999' }}>
+                              {new Intl.NumberFormat('vi-VN', {
+                                style: 'currency',
+                                currency: 'VND',
+                              }).format(productDetail.msrp)}
+                            </span>
+                          </div>
+                        </Col>
+                      )}
+                      <Col span={24}>
+                        <div><strong>Số lượng tồn kho:</strong> {productDetail.stock_quantity || 0}</div>
+                      </Col>
+                    </Row>
+                  </div>
+                </Col>
+
+                {/* Description Section */}
+                <Col span={24}>
+                  <div style={{ marginBottom: '24px' }}>
+                    <Title level={5}>Mô Tả</Title>
+                    {productDetail.short_description && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <strong>Mô tả ngắn:</strong>
+                        <div style={{ marginTop: '8px', color: '#666' }}>{productDetail.short_description}</div>
+                      </div>
+                    )}
+                    {productDetail.description && (
+                      <div>
+                        <strong>Mô tả chi tiết:</strong>
+                        <div style={{ marginTop: '8px', color: '#666', whiteSpace: 'pre-wrap' }}>
+                          {productDetail.description}
+                        </div>
+                      </div>
+                    )}
+                    {!productDetail.short_description && !productDetail.description && (
+                      <div style={{ color: '#999' }}>Chưa có mô tả</div>
+                    )}
+                  </div>
+                </Col>
+
+                {/* Additional Info Section */}
+                <Col span={24}>
+                  <div style={{ marginBottom: '24px' }}>
+                    <Title level={5}>Thông Tin Bổ Sung</Title>
+                    <Row gutter={[16, 16]}>
+                      {productDetail.origin && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Xuất xứ:</strong> {productDetail.origin}</div>
+                        </Col>
+                      )}
+                      {productDetail.manufacturer && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Nhà sản xuất:</strong> {productDetail.manufacturer}</div>
+                        </Col>
+                      )}
+                      {productDetail.volume_ml && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Dung tích:</strong> {productDetail.volume_ml} ml</div>
+                        </Col>
+                      )}
+                      {productDetail.brand && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Thương hiệu:</strong> {productDetail.brand}</div>
+                        </Col>
+                      )}
+                      {productDetail.category_id && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Danh mục ID:</strong> {productDetail.category_id}</div>
+                        </Col>
+                      )}
+                    </Row>
+                  </div>
+                </Col>
+
+                {/* SEO Section */}
+                {(productDetail.meta_title || productDetail.meta_description || productDetail.tags) && (
+                  <Col span={24}>
+                    <div style={{ marginBottom: '24px' }}>
+                      <Title level={5}>Thông Tin SEO</Title>
+                      <Row gutter={[16, 16]}>
+                        {productDetail.meta_title && (
+                          <Col span={24}>
+                            <div><strong>Meta Title:</strong> {productDetail.meta_title}</div>
+                          </Col>
+                        )}
+                        {productDetail.meta_description && (
+                          <Col span={24}>
+                            <div><strong>Meta Description:</strong> {productDetail.meta_description}</div>
+                          </Col>
+                        )}
+                        {productDetail.tags && (
+                          <Col span={24}>
+                            <div>
+                              <strong>Tags:</strong>{' '}
+                              {typeof productDetail.tags === 'string' 
+                                ? productDetail.tags 
+                                : Array.isArray(productDetail.tags) 
+                                  ? productDetail.tags.join(', ') 
+                                  : JSON.stringify(productDetail.tags)}
+                            </div>
+                          </Col>
+                        )}
+                      </Row>
+                    </div>
+                  </Col>
+                )}
+
+                {/* Attributes and Ingredients */}
+                {(productDetail.attributes || productDetail.ingredients) && (
+                  <Col span={24}>
+                    <div style={{ marginBottom: '24px' }}>
+                      <Title level={5}>Thuộc Tính và Thành Phần</Title>
+                      {productDetail.attributes && (
+                        <div style={{ marginBottom: '16px' }}>
+                          <strong>Thuộc tính:</strong>
+                          <pre style={{ 
+                            marginTop: '8px', 
+                            padding: '12px', 
+                            backgroundColor: '#f5f5f5', 
+                            borderRadius: '4px',
+                            overflow: 'auto',
+                            maxHeight: '200px'
+                          }}>
+                            {typeof productDetail.attributes === 'string' 
+                              ? productDetail.attributes 
+                              : JSON.stringify(productDetail.attributes, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                      {productDetail.ingredients && (
+                        <div>
+                          <strong>Thành phần:</strong>
+                          <pre style={{ 
+                            marginTop: '8px', 
+                            padding: '12px', 
+                            backgroundColor: '#f5f5f5', 
+                            borderRadius: '4px',
+                            overflow: 'auto',
+                            maxHeight: '200px'
+                          }}>
+                            {typeof productDetail.ingredients === 'string' 
+                              ? productDetail.ingredients 
+                              : Array.isArray(productDetail.ingredients)
+                                ? productDetail.ingredients.join(', ')
+                                : JSON.stringify(productDetail.ingredients, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </Col>
+                )}
+
+                {/* Timestamps */}
+                <Col span={24}>
+                  <div>
+                    <Title level={5}>Thông Tin Hệ Thống</Title>
+                    <Row gutter={[16, 16]}>
+                      {productDetail.created_at && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Ngày tạo:</strong> {new Date(productDetail.created_at).toLocaleString('vi-VN')}</div>
+                        </Col>
+                      )}
+                      {productDetail.updated_at && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Ngày cập nhật:</strong> {new Date(productDetail.updated_at).toLocaleString('vi-VN')}</div>
+                        </Col>
+                      )}
+                      {productDetail.deleted_at && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Ngày xóa:</strong> {new Date(productDetail.deleted_at).toLocaleString('vi-VN')}</div>
+                        </Col>
+                      )}
+                      {productDetail.sort_order !== undefined && productDetail.sort_order !== null && (
+                        <Col xs={24} sm={12}>
+                          <div><strong>Thứ tự sắp xếp:</strong> {productDetail.sort_order}</div>
+                        </Col>
+                      )}
+                    </Row>
+                  </div>
+                </Col>
+              </Row>
+            </div>
+          )}
+        </Spin>
       </Modal>
     </div>
   );

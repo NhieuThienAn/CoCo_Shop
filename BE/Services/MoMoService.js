@@ -1,20 +1,11 @@
 const crypto = require('crypto');
 const https = require('https');
 const momoConfig = require('../Config/momoConfig');
-
-/**
- * MoMo Payment Service
- * Xử lý tích hợp thanh toán MoMo
- */
 class MoMoService {
   constructor(environment = 'test') {
     this.config = momoConfig.getConfig(environment);
     this.environment = environment;
   }
-
-  /**
-   * Tạo signature cho request
-   */
   createSignature(params) {
     const {
       accessKey,
@@ -28,9 +19,6 @@ class MoMoService {
       requestId,
       requestType,
     } = params;
-
-    // CRITICAL FIX: Ensure all values are strings and handle empty values correctly
-    // MoMo signature requires exact string format
     const safeExtraData = extraData || '';
     const safeIpnUrl = ipnUrl || '';
     const safeOrderId = String(orderId || '');
@@ -41,22 +29,13 @@ class MoMoService {
     const safeAccessKey = String(accessKey || '');
     const safePartnerCode = String(partnerCode || '');
     const safeRequestType = String(requestType || '');
-
     const rawSignature = `accessKey=${safeAccessKey}&amount=${safeAmount}&extraData=${safeExtraData}&ipnUrl=${safeIpnUrl}&orderId=${safeOrderId}&orderInfo=${safeOrderInfo}&partnerCode=${safePartnerCode}&redirectUrl=${safeRedirectUrl}&requestId=${safeRequestId}&requestType=${safeRequestType}`;
-
-    // Signature created successfully
-
     const signature = crypto
       .createHmac('sha256', this.config.secretKey)
       .update(rawSignature)
       .digest('hex');
-    
     return signature;
   }
-
-  /**
-   * Verify signature từ MoMo callback
-   */
   verifySignature(params, signature) {
     const {
       accessKey,
@@ -73,20 +52,13 @@ class MoMoService {
       resultCode,
       transId,
     } = params;
-
     const rawSignature = `accessKey=${accessKey}&amount=${amount}&extraData=${extraData}&message=${message}&orderId=${orderId}&orderInfo=${orderInfo}&orderType=${orderType}&partnerCode=${partnerCode}&payType=${payType}&requestId=${requestId}&responseTime=${responseTime}&resultCode=${resultCode}&transId=${transId}`;
-
     const calculatedSignature = crypto
       .createHmac('sha256', this.config.secretKey)
       .update(rawSignature)
       .digest('hex');
-
     return calculatedSignature === signature;
   }
-
-  /**
-   * Tạo payment request với MoMo
-   */
   async createPaymentRequest(options) {
     const {
       orderId,
@@ -97,12 +69,10 @@ class MoMoService {
       ipnUrl = null,
       requestId = null,
     } = options;
-
     const finalRequestId = requestId || `${this.config.partnerCode}${Date.now()}`;
     const finalRedirectUrl = redirectUrl || this.config.redirectUrl;
     const finalIpnUrl = ipnUrl || this.config.ipnUrl;
     const finalAmount = Math.round(parseFloat(amount));
-    
     console.log('[MoMoService] 📋 Payment request parameters:', {
       orderId,
       amount: finalAmount,
@@ -111,7 +81,6 @@ class MoMoService {
       requestId: finalRequestId,
       usingDefaultIpnUrl: !ipnUrl,
     });
-
     const signature = this.createSignature({
       accessKey: this.config.accessKey,
       amount: finalAmount,
@@ -124,7 +93,6 @@ class MoMoService {
       requestId: finalRequestId,
       requestType: this.config.requestType,
     });
-
     const requestBody = JSON.stringify({
       partnerCode: this.config.partnerCode,
       partnerName: this.config.partnerName,
@@ -141,14 +109,11 @@ class MoMoService {
       extraData,
       signature,
     });
-
-    // Log request summary (without sensitive data)
     console.log('[MoMoService] 📤 Creating payment request:', {
       orderId,
       amount: finalAmount,
       requestId: finalRequestId,
     });
-
     return new Promise((resolve, reject) => {
       const url = new URL(this.config.apiEndpoint);
       const options = {
@@ -161,18 +126,14 @@ class MoMoService {
           'Content-Length': Buffer.byteLength(requestBody),
         },
       };
-
       const req = https.request(options, (res) => {
         let data = '';
-
         res.on('data', (chunk) => {
           data += chunk;
         });
-
         res.on('end', () => {
           try {
             const response = JSON.parse(data);
-            
             if (response.resultCode === 0) {
               console.log('[MoMoService] ✅ Payment request created successfully');
               resolve({
@@ -191,7 +152,6 @@ class MoMoService {
                 resultCode: response.resultCode,
                 message: response.message,
               });
-              
               resolve({
                 success: false,
                 message: response.message || 'Lỗi khi tạo payment request',
@@ -205,35 +165,26 @@ class MoMoService {
           }
         });
       });
-
       req.on('error', (error) => {
         reject(new Error(`Lỗi khi gửi request: ${error.message}`));
       });
-
       req.write(requestBody);
       req.end();
     });
   }
-
-  /**
-   * Query payment status từ MoMo
-   */
   async queryPaymentStatus(orderId, requestId) {
     const finalRequestId = requestId || `${this.config.partnerCode}${Date.now()}`;
-
     const rawSignature = `accessKey=${this.config.accessKey}&orderId=${orderId}&partnerCode=${this.config.partnerCode}&requestId=${finalRequestId}`;
     const signature = crypto
       .createHmac('sha256', this.config.secretKey)
       .update(rawSignature)
       .digest('hex');
-
     const requestBody = JSON.stringify({
       partnerCode: this.config.partnerCode,
       requestId: finalRequestId,
       orderId,
       signature,
     });
-
     return new Promise((resolve, reject) => {
       const queryUrl = this.config.apiEndpoint.replace('/create', '/query');
       const url = new URL(queryUrl);
@@ -247,14 +198,11 @@ class MoMoService {
           'Content-Length': Buffer.byteLength(requestBody),
         },
       };
-
       const req = https.request(options, (res) => {
         let data = '';
-
         res.on('data', (chunk) => {
           data += chunk;
         });
-
         res.on('end', () => {
           try {
             const response = JSON.parse(data);
@@ -274,19 +222,13 @@ class MoMoService {
           }
         });
       });
-
       req.on('error', (error) => {
         reject(new Error(`Lỗi khi gửi request: ${error.message}`));
       });
-
       req.write(requestBody);
       req.end();
     });
   }
-
-  /**
-   * Xử lý callback/IPN từ MoMo
-   */
   processCallback(callbackData) {
     try {
       const {
@@ -304,8 +246,6 @@ class MoMoService {
         extraData,
         signature,
       } = callbackData;
-
-      // Verify signature
       const isValid = this.verifySignature(
         {
           accessKey: this.config.accessKey,
@@ -324,7 +264,6 @@ class MoMoService {
         },
         signature
       );
-
       if (!isValid) {
         return {
           success: false,
@@ -333,9 +272,7 @@ class MoMoService {
           rawData: callbackData,
         };
       }
-
       const isSuccess = resultCode === 0;
-
       return {
         success: isSuccess,
         verified: true,
@@ -360,5 +297,4 @@ class MoMoService {
     }
   }
 }
-
 module.exports = MoMoService;

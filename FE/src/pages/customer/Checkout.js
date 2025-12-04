@@ -57,6 +57,7 @@ const Checkout = () => {
   const [showAddressForm, setShowAddressForm] = useState(false);
   const isMountedRef = useRef(true);
   const hasOrderBeenCreatedRef = useRef(false);
+  const [addressData, setAddressData] = useState(null); // Store vn-addresses.json data
 
   // Effect để load data khi mount
   useEffect(() => {
@@ -65,8 +66,59 @@ const Checkout = () => {
       navigate('/');
       return;
     }
+    // Load address data for province/city name conversion
+    loadAddressData();
     loadData();
   }, [user]);
+
+  // Load Vietnamese address data for converting codes to names
+  const loadAddressData = async () => {
+    try {
+      const response = await fetch('/assets/vn-addresses.json');
+      if (response.ok) {
+        const data = await response.json();
+        setAddressData(data);
+      }
+    } catch (error) {
+      console.error('[Checkout] Error loading address data:', error);
+    }
+  };
+
+  // Convert province/city/ward code to name
+  const getAddressName = (code, type = 'province') => {
+    if (!code || !addressData) return code;
+    
+    try {
+      if (type === 'province') {
+        const province = addressData.find(p => p.Code === code);
+        return province ? province.FullName : code;
+      } else if (type === 'ward') {
+        // Find ward across all provinces
+        for (const province of addressData) {
+          if (province.Wards) {
+            const ward = province.Wards.find(w => w.Code === code);
+            if (ward) {
+              return ward.FullName;
+            }
+          }
+        }
+        return code;
+      } else if (type === 'city') {
+        // City might be the same as province code, or a separate code
+        // Try to find as province first
+        const province = addressData.find(p => p.Code === code);
+        if (province) {
+          return province.FullName;
+        }
+        // If not found, return as-is (might be a city name already)
+        return code;
+      }
+    } catch (error) {
+      console.error('[Checkout] Error converting address code:', error);
+    }
+    
+    return code;
+  };
 
   // Effect riêng để handle cleanup khi rời khỏi checkout
   useEffect(() => {
@@ -102,16 +154,25 @@ const Checkout = () => {
                   await cart.clearCart();
                   
                   // Khôi phục các sản phẩm đã lưu
+                  let restoredCount = 0;
                   for (const item of savedCartItems) {
                     const productId = item.product_id || item.product?.product_id || item.product?.id;
                     const quantity = item.quantity || 1;
                     if (productId) {
                       await cart.addToCart(productId, quantity);
+                      restoredCount += quantity;
                     }
                   }
                   
-                  console.log('[Checkout] 🧹 Cart restored');
-                  window.dispatchEvent(new CustomEvent('cartUpdated'));
+                  console.log('[Checkout] 🧹 Cart restored:', restoredCount, 'items');
+                  // CartContext will automatically dispatch cartUpdated event for each addToCart call
+                  // Dispatch final event with total count
+                  window.dispatchEvent(new CustomEvent('cartUpdated', {
+                    detail: {
+                      action: 'restore',
+                      count: restoredCount
+                    }
+                  }));
                 }
               } catch (e) {
                 console.error('[Checkout] 🧹 Error restoring cart:', e);
@@ -543,16 +604,25 @@ const Checkout = () => {
               await cart.clearCart();
               
               // Khôi phục các sản phẩm đã lưu
+              let restoredCount = 0;
               for (const item of savedCartItems) {
                 const productId = item.product_id || item.product?.product_id || item.product?.id;
                 const quantity = item.quantity || 1;
                 if (productId) {
                   await cart.addToCart(productId, quantity);
+                  restoredCount += quantity;
                 }
               }
               
-              console.log('[Checkout] ✅ Cart restored after order');
-              window.dispatchEvent(new CustomEvent('cartUpdated'));
+              console.log('[Checkout] ✅ Cart restored after order:', restoredCount, 'items');
+              // CartContext will automatically dispatch cartUpdated event for each addToCart call
+              // Dispatch final event with total count
+              window.dispatchEvent(new CustomEvent('cartUpdated', {
+                detail: {
+                  action: 'restore',
+                  count: restoredCount
+                }
+              }));
             }
           } catch (e) {
             console.error('[Checkout] ❌ [BUG-FIX] Error restoring cart:', e);
@@ -763,13 +833,46 @@ const Checkout = () => {
                                   <Text type="secondary">{addr.address_line2}</Text>
                                 )}
                                 <Text type="secondary">
-                                  {[
-                                    addr.ward,
-                                    addr.district,
-                                    addr.city,
-                                    addr.province,
-                                  ].filter(Boolean).join(', ')}
-                                  {addr.postal_code && ` - ${addr.postal_code}`}
+                                  {(() => {
+                                    const addressParts = [];
+                                    
+                                    // Ward (Phường/Xã)
+                                    if (addr.ward) {
+                                      const wardName = getAddressName(addr.ward, 'ward');
+                                      addressParts.push(wardName);
+                                    }
+                                    
+                                    // District (Quận/Huyện)
+                                    if (addr.district) {
+                                      addressParts.push(addr.district);
+                                    }
+                                    
+                                    // City (Thành phố)
+                                    if (addr.city) {
+                                      const cityName = getAddressName(addr.city, 'city');
+                                      addressParts.push(cityName);
+                                    }
+                                    
+                                    // Province (Tỉnh) - only add if different from city
+                                    if (addr.province) {
+                                      const provinceName = getAddressName(addr.province, 'province');
+                                      // Only add province if it's different from city
+                                      if (!addr.city || provinceName !== getAddressName(addr.city, 'city')) {
+                                        addressParts.push(provinceName);
+                                      }
+                                    }
+                                    
+                                    const addressText = addressParts.length > 0 
+                                      ? addressParts.join(', ')
+                                      : 'N/A';
+                                    
+                                    return (
+                                      <>
+                                        {addressText}
+                                        {addr.postal_code && ` - ${addr.postal_code}`}
+                                      </>
+                                    );
+                                  })()}
                                 </Text>
                                 {addr.country && (
                                   <Text type="secondary">{addr.country}</Text>

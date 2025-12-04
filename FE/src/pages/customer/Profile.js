@@ -49,6 +49,7 @@ const Profile = () => {
   const [editing, setEditing] = useState(false);
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
+  const [addressData, setAddressData] = useState(null); // Store vn-addresses.json data
 
   useEffect(() => {
     if (!authUser) {
@@ -56,12 +57,63 @@ const Profile = () => {
       navigate('/');
       return;
     }
+    // Load address data for province/city name conversion
+    loadAddressData();
     loadProfile();
     // Check if we should open addresses tab
     if (searchParams.get('tab') === 'addresses') {
       // Tab will be set by defaultActiveKey
     }
   }, [authUser, searchParams]);
+
+  // Load Vietnamese address data for converting codes to names
+  const loadAddressData = async () => {
+    try {
+      const response = await fetch('/assets/vn-addresses.json');
+      if (response.ok) {
+        const data = await response.json();
+        setAddressData(data);
+      }
+    } catch (error) {
+      console.error('[Profile] Error loading address data:', error);
+    }
+  };
+
+  // Convert province/city/ward code to name
+  const getAddressName = (code, type = 'province') => {
+    if (!code || !addressData) return code;
+    
+    try {
+      if (type === 'province') {
+        const province = addressData.find(p => p.Code === code);
+        return province ? province.FullName : code;
+      } else if (type === 'ward') {
+        // Find ward across all provinces
+        for (const province of addressData) {
+          if (province.Wards) {
+            const ward = province.Wards.find(w => w.Code === code);
+            if (ward) {
+              return ward.FullName;
+            }
+          }
+        }
+        return code;
+      } else if (type === 'city') {
+        // City might be the same as province code, or a separate code
+        // Try to find as province first
+        const province = addressData.find(p => p.Code === code);
+        if (province) {
+          return province.FullName;
+        }
+        // If not found, return as-is (might be a city name already)
+        return code;
+      }
+    } catch (error) {
+      console.error('[Profile] Error converting address code:', error);
+    }
+    
+    return code;
+  };
 
   const loadProfile = async () => {
     try {
@@ -504,13 +556,46 @@ const Profile = () => {
                           )}
                           <br />
                           <Text type="secondary">
-                            {[
-                              addr.ward,
-                              addr.district,
-                              addr.city,
-                              addr.province,
-                            ].filter(Boolean).join(', ')}
-                            {addr.postal_code && ` - ${addr.postal_code}`}
+                            {(() => {
+                              const addressParts = [];
+                              
+                              // Ward (Phường/Xã)
+                              if (addr.ward) {
+                                const wardName = getAddressName(addr.ward, 'ward');
+                                addressParts.push(wardName);
+                              }
+                              
+                              // District (Quận/Huyện)
+                              if (addr.district) {
+                                addressParts.push(addr.district);
+                              }
+                              
+                              // City (Thành phố)
+                              if (addr.city) {
+                                const cityName = getAddressName(addr.city, 'city');
+                                addressParts.push(cityName);
+                              }
+                              
+                              // Province (Tỉnh) - only add if different from city
+                              if (addr.province) {
+                                const provinceName = getAddressName(addr.province, 'province');
+                                // Only add province if it's different from city
+                                if (!addr.city || provinceName !== getAddressName(addr.city, 'city')) {
+                                  addressParts.push(provinceName);
+                                }
+                              }
+                              
+                              const addressText = addressParts.length > 0 
+                                ? addressParts.join(', ')
+                                : 'N/A';
+                              
+                              return (
+                                <>
+                                  {addressText}
+                                  {addr.postal_code && ` - ${addr.postal_code}`}
+                                </>
+                              );
+                            })()}
                           </Text>
                           {addr.country && (
                             <>

@@ -47,6 +47,7 @@ const StockReceiptDetail = lazy(() => import('../pages/admin/StockReceiptDetail.
 const WarehouseManagement = lazy(() => import('../pages/admin/WarehouseManagement.js'));
 const AdminBank = lazy(() => import('../pages/admin/Bank.js'));
 const AdminStatistics = lazy(() => import('../pages/admin/Statistics.js'));
+const AdminCartManagement = lazy(() => import('../pages/admin/CartManagement.js'));
 
 // Lazy load Shipper Pages
 const ShipperOrders = lazy(() => import('../pages/shipper/Orders.js'));
@@ -100,6 +101,7 @@ const AppRoutes = () => {
           <Route path="stock-receipts/create" element={<StockReceiptForm />} />
           <Route path="bank" element={<AdminBank />} />
           <Route path="statistics" element={<AdminStatistics />} />
+          <Route path="carts" element={<AdminCartManagement />} />
         </Route>
 
         {/* Shipper Routes - Only accessible by Shipper (role 2) */}

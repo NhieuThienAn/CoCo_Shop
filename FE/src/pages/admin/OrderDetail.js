@@ -36,6 +36,7 @@ const AdminOrderDetail = () => {
   const [orderData, setOrderData] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
   // Fallback map mặc định để đảm bảo luôn có tên trạng thái
   const defaultStatusMap = {
     1: 'Chờ Xác Nhận',
@@ -192,6 +193,12 @@ const AdminOrderDetail = () => {
   };
 
   const handleStatusChange = async (action) => {
+    // Prevent multiple clicks
+    if (updating) {
+      return;
+    }
+
+    setUpdating(true);
     try {
       let response;
       switch (action) {
@@ -199,6 +206,8 @@ const AdminOrderDetail = () => {
           response = await order.confirmOrder(id);
           if (response.success) {
             message.success('Xác nhận đơn hàng thành công');
+            // Reload immediately to update UI
+            await loadOrderDetail();
           } else {
             message.error(response.message || 'Có lỗi xảy ra khi xác nhận đơn hàng');
             return;
@@ -275,11 +284,16 @@ const AdminOrderDetail = () => {
         default:
           break;
       }
-      loadOrderDetail();
+      // Only reload if not already reloaded in specific case
+      if (action !== 'confirm') {
+        await loadOrderDetail();
+      }
     } catch (error) {
       console.error('Error updating order:', error);
       const errorMessage = error.message || 'Có lỗi xảy ra khi cập nhật đơn hàng';
       message.error(errorMessage);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -774,6 +788,8 @@ const AdminOrderDetail = () => {
                 type="primary"
                 icon={<CheckOutlined />}
                 onClick={() => handleStatusChange('confirm')}
+                loading={updating}
+                disabled={updating}
               >
                 Xác Nhận Đơn Hàng
               </Button>
@@ -802,7 +818,7 @@ const AdminOrderDetail = () => {
               icon={<CheckCircleOutlined />}
               onClick={() => handleStatusChange('delivered')}
             >
-              Đánh Dấu Đã Giao
+              Đã Giao Hàng
             </Button>
           )}
           {/* [NEW REQUIREMENT] COD orders ở DELIVERED: Admin có thể chọn trạng thái thanh toán */}

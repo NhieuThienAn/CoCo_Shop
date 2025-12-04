@@ -1,8 +1,6 @@
 const createBaseModel = require('./BaseModel');
 const { tableSchemas } = require('./ModelSchemas');
 
-// Import tất cả các model creator functions
-// Use absolute path to avoid case sensitivity issues on Windows
 const path = require('path');
 const createUserModel = require(path.resolve(__dirname, 'User.js'));
 if (typeof createUserModel !== 'function') {
@@ -44,7 +42,6 @@ const toCamelCase = (value) =>
     .replace(/[-_\s]+([a-zA-Z0-9])/g, (_, chunk) => chunk.toUpperCase())
     .replace(/^[A-Z]/, (letter) => letter.toLowerCase());
 
-// Tạo instances của các model
 const user = createUserModel();
 const role = createRoleModel();
 const address = createAddressModel();
@@ -54,7 +51,7 @@ const brand = createBrandModel();
 const supplier = createSupplierModel();
 const order = createOrderModel();
 const orderItemInstance = createOrderItemModel();
-// Ensure createWithSnapshot is available
+
 if (typeof orderItemInstance.createWithSnapshot !== 'function') {
   console.warn('[Models/index] WARNING: orderItem.createWithSnapshot is missing! Adding it...');
   orderItemInstance.createWithSnapshot = async function(orderId, productId, quantity, unitPrice, productSnapshot = null) {
@@ -100,7 +97,6 @@ const stockReceipt = createStockReceiptModel();
 const tokenBlacklist = createTokenBlacklistModel();
 const emailOtp = createEmailOtpModel();
 
-// Registry tự động từ schema (backward compatibility)
 const buildModelRegistry = () => {
   const modelsByTable = {};
   const modelsByAlias = {};
@@ -129,13 +125,12 @@ const getModel = (name) => modelsByTable[name] || modelsByAlias[name] || null;
 const hasModel = (name) => Boolean(getModel(name));
 
 module.exports = {
-  // BaseModel creator function
+
   createBaseModel,
   tableSchemas,
   getModel,
   hasModel,
 
-  // Model creator functions (để tạo instance mới nếu cần)
   createUserModel,
   createRoleModel,
   createAddressModel,
@@ -168,7 +163,6 @@ module.exports = {
   createTokenBlacklistModel,
   createEmailOtpModel,
 
-  // Model instances (để sử dụng trực tiếp)
   user,
   role,
   address,
@@ -201,7 +195,6 @@ module.exports = {
   tokenBlacklist,
   emailOtp,
 
-  // Registry tự động (backward compatibility)
   models: modelsByTable,
   aliases: modelsByAlias,
 };

@@ -59,4 +59,3 @@ const createStockReceiptModel = () => {
 };
 
 module.exports = createStockReceiptModel;
-

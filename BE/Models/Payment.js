@@ -31,11 +31,6 @@ const createPaymentModel = () => {
     return await baseModel.execute(sql, [orderId]);
   };
 
-  /**
-   * Batch find payments by multiple order_ids using SQL WHERE IN (single SQL query)
-   * Returns array of payments, can be grouped by order_id
-   * This replaces multiple individual queries in loops
-   */
   const findByOrderIds = async (orderIds) => {
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       return [];
@@ -49,10 +44,6 @@ const createPaymentModel = () => {
     return await baseModel.execute(sql, uniqueOrderIds);
   };
 
-  /**
-   * Find first payment by order_id (SQL LIMIT 1, ordered by created_at DESC)
-   * Returns single payment object or null
-   */
   const findFirstByOrderId = async (orderId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? ORDER BY \`created_at\` DESC LIMIT 1`;
     const rows = await baseModel.execute(sql, [orderId]);
@@ -65,44 +56,29 @@ const createPaymentModel = () => {
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
 
-  /**
-   * Find payment by order_id and payment_status_id (SQL WHERE clause)
-   */
   const findByOrderIdAndStatus = async (orderId, paymentStatusId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? AND \`payment_status_id\` = ? ORDER BY \`created_at\` DESC LIMIT 1`;
     const rows = await baseModel.execute(sql, [orderId, paymentStatusId]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
 
-  /**
-   * Find payment by order_id, payment_status_id and gateway (SQL WHERE clause)
-   */
   const findByOrderIdStatusAndGateway = async (orderId, paymentStatusId, gateway) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? AND \`payment_status_id\` = ? AND UPPER(\`gateway\`) = UPPER(?) ORDER BY \`created_at\` DESC LIMIT 1`;
     const rows = await baseModel.execute(sql, [orderId, paymentStatusId, gateway]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
 
-  /**
-   * Find all payments by order_id, payment_status_id and gateway (SQL WHERE clause)
-   */
   const findAllByOrderIdStatusAndGateway = async (orderId, paymentStatusId, gateway) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? AND \`payment_status_id\` = ? AND UPPER(\`gateway\`) = UPPER(?) ORDER BY \`created_at\` DESC`;
     return await baseModel.execute(sql, [orderId, paymentStatusId, gateway]);
   };
 
-  /**
-   * Find payment by order_id and gateway only (SQL WHERE clause, status can be any)
-   */
   const findByOrderIdAndGateway = async (orderId, gateway) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? AND UPPER(\`gateway\`) = UPPER(?) ORDER BY \`created_at\` DESC LIMIT 1`;
     const rows = await baseModel.execute(sql, [orderId, gateway]);
     return Array.isArray(rows) ? rows[0] || null : rows;
   };
 
-  /**
-   * Find payment by order_id, payment_status_id, gateway and payment_method_id (SQL WHERE clause)
-   */
   const findByOrderIdStatusGatewayAndMethod = async (orderId, paymentStatusId, gateway, paymentMethodId) => {
     const sql = `SELECT * FROM \`${baseModel.tableName}\` WHERE \`order_id\` = ? AND \`payment_status_id\` = ? AND UPPER(\`gateway\`) = UPPER(?) AND \`payment_method_id\` = ? ORDER BY \`created_at\` DESC LIMIT 1`;
     const rows = await baseModel.execute(sql, [orderId, paymentStatusId, gateway, paymentMethodId]);
@@ -110,7 +86,7 @@ const createPaymentModel = () => {
   };
 
   const markAsPaid = async (paymentId, paidAt = null) => {
-    // CRITICAL FIX: Dynamically look up payment_status_id for "Paid"
+
     const createPaymentStatusModel = require('./PaymentStatus');
     const paymentStatus = createPaymentStatusModel();
     let paidStatusId = null;
@@ -119,7 +95,6 @@ const createPaymentModel = () => {
       if (paidStatus && paidStatus.payment_status_id) {
         paidStatusId = paidStatus.payment_status_id;
       } else {
-        // Use SQL LIMIT 1 instead of JavaScript array access
         const { paymentStatus } = require('../Models');
         const statusRow = await paymentStatus.findFirstByNameLike('paid');
         if (statusRow && statusRow.payment_status_id) {
@@ -137,12 +112,12 @@ const createPaymentModel = () => {
     } catch (statusError) {
       console.error('[Payment Model] Error finding/creating payment status:', statusError.message);
     }
-    
+
     if (!paidStatusId) {
       console.error('[Payment Model] Could not find or create Paid payment status');
       throw new Error('Không thể tìm thấy trạng thái thanh toán Paid');
     }
-    
+
     const updateData = {
       payment_status_id: paidStatusId,
       paid_at: paidAt || new Date(),
@@ -156,11 +131,11 @@ const createPaymentModel = () => {
         ? gatewayResponse 
         : JSON.stringify(gatewayResponse),
     };
-    
+
     if (gatewayStatus) {
       updateData.gateway_status = gatewayStatus;
     }
-    
+
     return await baseModel.update(paymentId, updateData);
   };
 

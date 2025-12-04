@@ -2,24 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { CouponController } = require('../Controllers');
 const { authenticate, authorize, optionalAuthenticate } = require('../Middlewares');
-
-/**
- * Coupon Routes
- */
-
-// Public routes - No authentication required
 router.get('/active/list', optionalAuthenticate, CouponController.getActiveCoupons);
 router.get('/code/:code', optionalAuthenticate, CouponController.getByCode);
 router.post('/validate', optionalAuthenticate, CouponController.validateCoupon);
-
-/**
- * Coupon CRUD Routes - Admin only
- */
 router.get('/', authenticate, authorize(1), CouponController.getAll);
 router.get('/:id', authenticate, authorize(1), CouponController.getById);
 router.post('/', authenticate, authorize(1), CouponController.create);
 router.put('/:id', authenticate, authorize(1), CouponController.update);
 router.delete('/:id', authenticate, authorize(1), CouponController.delete);
-
 module.exports = router;
-

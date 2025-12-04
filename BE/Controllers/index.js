@@ -1,8 +1,5 @@
-/**
- * Export tất cả controllers
- */
 module.exports = {
-  // Main Controllers
+
   UserController: require('./UserController'),
   ProductController: require('./ProductController'),
   CategoryController: require('./CategoryController'),
@@ -13,8 +10,7 @@ module.exports = {
   ReviewController: require('./ReviewController'),
   WishlistController: require('./WishlistController'),
   AddressController: require('./AddressController'),
-  
-  // Support Controllers
+
   RoleController: require('./RoleController'),
   BrandController: require('./BrandController'),
   SupplierController: require('./SupplierController'),
@@ -29,19 +25,15 @@ module.exports = {
   InventoryTransactionController: require('./InventoryTransactionController'),
   StockReceiptController: require('./StockReceiptController'),
   TokenBlacklistController: require('./TokenBlacklistController'),
-  
-  // Bank Controllers
+
   BankController: require('./BankController'),
   BankAccountController: require('./BankAccountController'),
   BankTransactionController: require('./BankTransactionController'),
   BankTransferRequestController: require('./BankTransferRequestController'),
   BankApiLogController: require('./BankApiLogController'),
   BankReconciliationController: require('./BankReconciliationController'),
-  
-  // Statistics Controller
+
   StatisticsController: require('./StatisticsController'),
-  
-  // Base Controller để extend
+
   BaseController: require('./BaseController'),
 };
-
